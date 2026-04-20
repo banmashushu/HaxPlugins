@@ -1,0 +1,42 @@
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/vendor/
+/bin/
+/dist/
+/build/
+
+# Wails
+/frontend/node_modules/
+/frontend/dist/
+/frontend/build/
+
+# Logs
+*.log
+
+# Local env
+.env
+.env.local
+
+# SQLite databases
+*.db
+*.sqlite
+*.sqlite3
