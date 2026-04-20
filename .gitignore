@@ -22,7 +22,7 @@ Thumbs.db
 /vendor/
 /bin/
 /dist/
-/build/
+/build/bin/
 
 # Wails
 /frontend/node_modules/
