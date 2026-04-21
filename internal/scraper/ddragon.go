@@ -103,15 +103,11 @@ func (c *DDragonClient) fetchChampionData(version, lang string) (*ChampionData, 
 	return &data, nil
 }
 
-// ItemInfo DDragon 装备数据
+// ItemInfo 合并后的装备数据
 type ItemInfo struct {
-	Name string   `json:"name"`
-	Tags []string `json:"tags"`
-}
-
-// ItemData DDragon 装备响应
-type ItemData struct {
-	Data map[string]ItemInfo `json:"data"`
+	NameEN string   `json:"name_en"`
+	NameCN string   `json:"name_cn"`
+	Tags   []string `json:"tags"`
 }
 
 // FetchItems 获取所有装备基础数据
@@ -127,26 +123,30 @@ func (c *DDragonClient) FetchItems(version string) (map[int]ItemInfo, error) {
 	}
 
 	result := make(map[int]ItemInfo)
-	for idStr, enItem := range enData.Data {
+	for idStr, enItem := range enData {
 		var id int
 		fmt.Sscanf(idStr, "%d", &id)
 
-		zhItem := zhData.Data[idStr]
-		name := zhItem.Name
-		if name == "" {
-			name = enItem.Name
+		zhItem := zhData[idStr]
+		nameCN := zhItem.Name
+		if nameCN == "" {
+			nameCN = enItem.Name
 		}
 
 		result[id] = ItemInfo{
-			Name: name,
-			Tags: enItem.Tags,
+			NameEN: enItem.Name,
+			NameCN: nameCN,
+			Tags:   enItem.Tags,
 		}
 	}
 
 	return result, nil
 }
 
-func (c *DDragonClient) fetchItemData(version, lang string) (*ItemData, error) {
+func (c *DDragonClient) fetchItemData(version, lang string) (map[string]struct {
+	Name string   `json:"name"`
+	Tags []string `json:"tags"`
+}, error) {
 	url := fmt.Sprintf("%s/cdn/%s/data/%s/item.json", ddragonBaseURL, version, lang)
 	resp, err := c.client.Get(url)
 	if err != nil {
@@ -154,10 +154,15 @@ func (c *DDragonClient) fetchItemData(version, lang string) (*ItemData, error) {
 	}
 	defer resp.Body.Close()
 
-	var data ItemData
+	var data struct {
+		Data map[string]struct {
+			Name string   `json:"name"`
+			Tags []string `json:"tags"`
+		} `json:"data"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return nil, fmt.Errorf("decode item data: %w", err)
 	}
 
-	return &data, nil
+	return data.Data, nil
 }

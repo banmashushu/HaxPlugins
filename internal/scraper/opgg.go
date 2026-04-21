@@ -1,6 +1,7 @@
 package scraper
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,7 +11,10 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-const opggBaseURL = "https://op.gg"
+const (
+	opggBaseURL       = "https://op.gg"
+	opggChampionAPI   = "https://lol-api-champion.op.gg/api"
+)
 
 // OPGGSource OP.GG 数据源
 type OPGGSource struct {
@@ -43,15 +47,12 @@ func (s *OPGGSource) GetCurrentPatch() (string, error) {
 	}
 	defer resp.Body.Close()
 
-	// 直接读取响应体，用字符串搜索提取版本号
-	// 例如: https://opgg-static.akamaized.net/meta/images/lol/16.8.1/champion/Neeko.png
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("read body: %w", err)
 	}
 	body := string(bodyBytes)
 
-	// 查找 /lol/ 后面的版本号
 	for {
 		idx := strings.Index(body, "/lol/")
 		if idx == -1 {
@@ -77,90 +78,153 @@ func (s *OPGGSource) GetCurrentPatch() (string, error) {
 	return "", fmt.Errorf("could not detect patch version from OP.GG")
 }
 
-// ScrapeChampionStats 爬取英雄胜率排行
-func (s *OPGGSource) ScrapeChampionStats(mode, patch string) ([]ChampionStat, error) {
-	url := fmt.Sprintf("%s/zh-cn/lol/modes/aram-mayhem", opggBaseURL)
-	if patch != "" {
-		url += "?patch=" + patch
+// opggChampionMeta OP.GG 英雄元数据
+type opggChampionMeta struct {
+	ID   int    `json:"id"`
+	Key  string `json:"key"`
+	Name string `json:"name"`
+}
+
+// opggChampionMetaResponse 英雄元数据响应
+type opggChampionMetaResponse struct {
+	Data []opggChampionMeta `json:"data"`
+}
+
+// fetchChampionMeta 获取英雄元数据（中文名映射）
+func (s *OPGGSource) fetchChampionMeta() (map[int]opggChampionMeta, error) {
+	url := fmt.Sprintf("%s/meta/champions?hl=zh_CN", opggChampionAPI)
+	req, err := newRequest("GET", url)
+	if err != nil {
+		return nil, err
 	}
+	req.Header.Set("Accept", "application/json")
+
+	randomDelay()
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch champion meta: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch champion meta: status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read champion meta: %w", err)
+	}
+
+	var result opggChampionMetaResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("decode champion meta: %w", err)
+	}
+
+	metaMap := make(map[int]opggChampionMeta, len(result.Data))
+	for _, champ := range result.Data {
+		metaMap[champ.ID] = champ
+	}
+	return metaMap, nil
+}
+
+// opggChampionStats OP.GG API 中的单个英雄统计
+type opggChampionStats struct {
+	ID           int    `json:"id"`
+	Tier         string `json:"tier"`
+	Rank         int    `json:"rank"`
+	AverageStats struct {
+		WinRate  float64 `json:"win_rate"`
+		PickRate float64 `json:"pick_rate"`
+		BanRate  float64 `json:"ban_rate"`
+		Play     int     `json:"play"`
+	} `json:"average_stats"`
+}
+
+// opggChampionStatsResponse 英雄统计数据响应
+type opggChampionStatsResponse struct {
+	Data []opggChampionStats `json:"data"`
+}
+
+// mapMode 将内部模式名称映射为 OP.GG API 有效模式
+func mapMode(mode string) string {
+	switch mode {
+	case "hexgates":
+		return "aram"
+	case "aram-mayhem":
+		return "aram"
+	default:
+		return mode
+	}
+}
+
+// ScrapeChampionStats 爬取英雄胜率排行（使用 OP.GG 内部 API）
+func (s *OPGGSource) ScrapeChampionStats(mode, patch string) ([]ChampionStat, error) {
+	// 1. 获取中文名映射
+	metaMap, err := s.fetchChampionMeta()
+	if err != nil {
+		return nil, fmt.Errorf("fetch meta: %w", err)
+	}
+
+	// 2. 获取统计数据
+	apiMode := mapMode(mode)
+	url := fmt.Sprintf("%s/NA/champions/%s?tier=all&hl=zh_CN", opggChampionAPI, apiMode)
 
 	req, err := newRequest("GET", url)
 	if err != nil {
 		return nil, err
 	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Referer", "https://op.gg/")
 
 	randomDelay()
 	resp, err := s.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetch champion stats: %w", err)
 	}
+	defer resp.Body.Close()
 
-	// 检查是否是 Cloudflare 拦截页
-	if resp.StatusCode == http.StatusForbidden || resp.StatusCode == http.StatusServiceUnavailable {
-		resp.Body.Close()
-		return nil, fmt.Errorf("OP.GG blocked request (status %d), possibly Cloudflare protection", resp.StatusCode)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch champion stats: status %d", resp.StatusCode)
 	}
 
-	// 先读取 body 到字符串，再解析
-	bodyBytes, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read body: %w", err)
+		return nil, fmt.Errorf("read champion stats: %w", err)
 	}
 
-	doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(bodyBytes)))
-	if err != nil {
-		return nil, fmt.Errorf("parse champion stats: %w", err)
+	var apiResp opggChampionStatsResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("decode champion stats: %w", err)
 	}
 
+	if len(apiResp.Data) == 0 {
+		return nil, fmt.Errorf("no champion stats returned from API")
+	}
+
+	// 3. 合并数据
 	var stats []ChampionStat
-
-	// OP.GG 英雄列表表格选择器（需要根据实际页面结构调整）
-	doc.Find("table tbody tr").Each(func(i int, sel *goquery.Selection) {
-		// 跳过表头
-		if i == 0 && sel.Find("th").Length() > 0 {
-			return
+	for _, cs := range apiResp.Data {
+		meta, ok := metaMap[cs.ID]
+		if !ok {
+			continue
 		}
 
-		cells := sel.Find("td")
-		if cells.Length() < 4 {
-			return
-		}
-
-		// 提取英雄名称（通常是第一列）
-		nameCell := cells.Eq(1) // 假设第2列是英雄名称
-		nameCN := strings.TrimSpace(nameCell.Find("strong").Text())
-		if nameCN == "" {
-			nameCN = strings.TrimSpace(nameCell.Text())
-		}
-
-		// 提取胜率
-		winrateText := strings.TrimSpace(cells.Eq(2).Text())
-		winrateText = strings.TrimSuffix(winrateText, "%")
-		winrate, _ := strconv.ParseFloat(winrateText, 64)
-
-		// 提取登场率
-		pickrateText := strings.TrimSpace(cells.Eq(3).Text())
-		pickrateText = strings.TrimSuffix(pickrateText, "%")
-		pickrate, _ := strconv.ParseFloat(pickrateText, 64)
-
-		// 提取段位/评级
-		tier := strings.TrimSpace(cells.Eq(0).Text())
-
-		if nameCN != "" && winrate > 0 {
-			stats = append(stats, ChampionStat{
-				NameCN:   nameCN,
-				Winrate:  winrate / 100,
-				Pickrate: pickrate / 100,
-				Tier:     tier,
-				Patch:    patch,
-				Source:   s.Name(),
-			})
-		}
-	})
+		stats = append(stats, ChampionStat{
+			ChampionID: cs.ID,
+			NameCN:     meta.Name,
+			NameEN:     meta.Key,
+			Winrate:    cs.AverageStats.WinRate,
+			Pickrate:   cs.AverageStats.PickRate,
+			Banrate:    cs.AverageStats.BanRate,
+			Tier:       cs.Tier,
+			SampleSize: cs.AverageStats.Play,
+			Patch:      patch,
+			Source:     s.Name(),
+		})
+	}
 
 	if len(stats) == 0 {
-		return nil, fmt.Errorf("no champion stats found, page structure may have changed")
+		return nil, fmt.Errorf("no valid champion stats after merging with meta")
 	}
 
 	return stats, nil
@@ -168,15 +232,11 @@ func (s *OPGGSource) ScrapeChampionStats(mode, patch string) ([]ChampionStat, er
 
 // ScrapeAugmentStats 爬取海克斯数据
 func (s *OPGGSource) ScrapeAugmentStats(mode, patch string) ([]HeroAugmentStat, error) {
-	// OP.GG 的 augment 数据通常在英雄详情页中
-	// 这里返回空，需要通过其他方式获取
-	// TODO: 实现 augment 数据爬取
 	return nil, fmt.Errorf("augment scraping not yet implemented for OP.GG")
 }
 
 // ScrapeBuilds 爬取英雄出装
 func (s *OPGGSource) ScrapeBuilds(mode, patch string) ([]BuildRecommendation, error) {
-	// TODO: 需要遍历每个英雄的 build 页面
 	return nil, fmt.Errorf("build scraping not yet implemented for OP.GG")
 }
 
@@ -211,7 +271,6 @@ func (s *OPGGSource) ScrapeAugmentList() ([]struct {
 		Tier   string
 	}
 
-	// 根据 OP.GG 页面结构查找 augment 筛选区
 	doc.Find("[data-type='augment']").Each(func(i int, sel *goquery.Selection) {
 		name := strings.TrimSpace(sel.Text())
 		tier, _ := sel.Attr("data-tier")
@@ -260,7 +319,6 @@ func (s *OPGGSource) ScrapeChampionBuild(championKey, patch string) (*BuildRecom
 		Source:       s.Name(),
 	}
 
-	// 爬取出装顺序
 	doc.Find(".build-items .item").Each(func(i int, sel *goquery.Selection) {
 		itemIDStr, _ := sel.Attr("data-item-id")
 		itemID, _ := strconv.Atoi(itemIDStr)
@@ -275,7 +333,6 @@ func (s *OPGGSource) ScrapeChampionBuild(championKey, patch string) (*BuildRecom
 		}
 	})
 
-	// 爬取符文
 	doc.Find(".rune-page .rune").Each(func(i int, sel *goquery.Selection) {
 		runeName, _ := sel.Attr("alt")
 		if runeName == "" {

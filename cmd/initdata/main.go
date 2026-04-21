@@ -121,7 +121,7 @@ func initItems(db *data.DB, client *scraper.DDragonClient, version string) error
 	count := 0
 	for id, info := range ddItems {
 		tagsJSON, _ := json.Marshal(info.Tags)
-		if _, err := stmt.Exec(id, info.Name, info.Name, string(tagsJSON)); err != nil {
+		if _, err := stmt.Exec(id, info.NameEN, info.NameCN, string(tagsJSON)); err != nil {
 			continue
 		}
 		count++

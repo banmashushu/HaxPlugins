@@ -3,6 +3,7 @@ module haxPlugins
 go 1.25.0
 
 require (
+	github.com/PuerkitoBio/goquery v1.12.0
 	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/spf13/viper v1.21.0
 	github.com/wailsapp/wails/v2 v2.11.0
@@ -10,7 +11,6 @@ require (
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.12.0 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect

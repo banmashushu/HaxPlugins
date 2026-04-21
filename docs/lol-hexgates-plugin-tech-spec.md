@@ -555,11 +555,15 @@ func (s *Scraper) scrapeAll() {
 
 ### 5.3 OP.GG 爬虫实现
 
+OP.GG 前端使用 Next.js streaming SSR，初始 HTML 表格为空，无法通过 HTML 爬取获取数据。实际数据来自 OP.GG 内部 REST API `https://lol-api-champion.op.gg/api`。
+
 ```go
 package scraper
 
 import (
+    "encoding/json"
     "fmt"
+    "io"
     "net/http"
     "strconv"
     "strings"
@@ -567,231 +571,402 @@ import (
     "github.com/PuerkitoBio/goquery"
 )
 
-// OPGGSource OP.GG 数据源（中文，有海克斯大乱斗独立页面）
+const (
+    opggBaseURL     = "https://op.gg"
+    opggChampionAPI = "https://lol-api-champion.op.gg/api"
+)
+
+// OPGGSource OP.GG 数据源（通过内部 REST API）
 type OPGGSource struct {
-    client  *http.Client
-    baseURL string
+    client *http.Client
 }
 
 func NewOPGGSource() *OPGGSource {
     return &OPGGSource{
-        client:  &http.Client{Timeout: 30 * time.Second},
-        baseURL: "https://op.gg/zh-cn/lol/modes/aram-mayhem",
+        client: NewHTTPClient(),
     }
 }
 
 func (s *OPGGSource) Name() string { return "opgg" }
 
-// GetCurrentPatch 从 OP.GG 页面获取当前游戏版本
-func (s *OPGGSource) GetCurrentPatch() string {
-    // OP.GG 页面有版本信息，如 "16.8.1"
-    // 或通过 Riot API 获取当前版本，统一数据源
-    resp, err := s.client.Get(s.baseURL)
+// GetCurrentPatch 从 OP.GG 页面静态资源路径提取版本号
+// 例如从 https://opgg-static.akamaized.net/meta/images/lol/16.8.1/champion/Neeko.png 中提取 "16.8.1"
+func (s *OPGGSource) GetCurrentPatch() (string, error) {
+    req, err := newRequest("GET", opggBaseURL+"/zh-cn/lol/modes/aram-mayhem")
     if err != nil {
-        return ""
+        return "", err
+    }
+
+    randomDelay()
+    resp, err := retryRequest(s.client, req, 3)
+    if err != nil {
+        return "", fmt.Errorf("fetch patch: %w", err)
     }
     defer resp.Body.Close()
 
-    doc, err := goquery.NewDocumentFromReader(resp.Body)
+    bodyBytes, err := io.ReadAll(resp.Body)
     if err != nil {
-        return ""
+        return "", fmt.Errorf("read body: %w", err)
+    }
+    body := string(bodyBytes)
+
+    // 查找 /lol/ 后面的版本号
+    for {
+        idx := strings.Index(body, "/lol/")
+        if idx == -1 {
+            break
+        }
+        body = body[idx+5:]
+        slashIdx := strings.Index(body, "/")
+        if slashIdx == -1 {
+            break
+        }
+        candidate := body[:slashIdx]
+        segments := strings.Split(candidate, ".")
+        if len(segments) >= 2 {
+            _, err1 := strconv.Atoi(segments[0])
+            _, err2 := strconv.Atoi(segments[1])
+            if err1 == nil && err2 == nil {
+                return candidate, nil
+            }
+        }
+        body = body[slashIdx+1:]
     }
 
-    // 从页面或 meta 标签提取版本号
-    version := doc.Find("meta[name='version']").AttrOr("content", "")
-    return version
+    return "", fmt.Errorf("could not detect patch version from OP.GG")
 }
 
-// ScrapeChampionStats 爬取英雄胜率排行
-// OP.GG 页面: https://op.gg/zh-cn/lol/modes/aram-mayhem
-// 页面结构：表格，列：排名、英雄、段位、胜率、登场率
-func (s *OPGGSource) ScrapeChampionStats(mode, patch string) []ChampionStat {
-    url := fmt.Sprintf("%s?patch=%s", s.baseURL, patch)
+// === API 数据模型 ===
 
-    resp, err := s.client.Get(url)
+// 英雄元数据响应：/api/meta/champions?hl=zh_CN
+type opggChampionMeta struct {
+    ID   int    `json:"id"`   // 英雄数字 ID
+    Key  string `json:"key"`  // 英文 key，如 "Garen"
+    Name string `json:"name"` // 中文名，如 "德玛西亚之力"
+}
+
+// 英雄统计响应：/api/{region}/champions/{mode}?tier=all&hl=zh_CN
+type opggChampionStats struct {
+    ID   int    `json:"id"`
+    Tier string `json:"tier"` // tier 等级（如 "3"）
+    Rank int    `json:"rank"`
+    AverageStats struct {
+        WinRate  float64 `json:"win_rate"`  // 0.0 ~ 1.0
+        PickRate float64 `json:"pick_rate"` // 0.0 ~ 1.0
+        BanRate  float64 `json:"ban_rate"`  // 可能为 null
+        Play     int     `json:"play"`      // 样本量
+    } `json:"average_stats"`
+}
+
+// === 核心爬取逻辑 ===
+
+// fetchChampionMeta 获取英雄元数据（ID → 中文名/英文 key 映射）
+func (s *OPGGSource) fetchChampionMeta() (map[int]opggChampionMeta, error) {
+    url := fmt.Sprintf("%s/meta/champions?hl=zh_CN", opggChampionAPI)
+    req, err := newRequest("GET", url)
     if err != nil {
-        return nil
+        return nil, err
+    }
+    req.Header.Set("Accept", "application/json")
+
+    randomDelay()
+    resp, err := s.client.Do(req)
+    if err != nil {
+        return nil, fmt.Errorf("fetch champion meta: %w", err)
     }
     defer resp.Body.Close()
 
-    doc, err := goquery.NewDocumentFromReader(resp.Body)
-    if err != nil {
-        return nil
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("fetch champion meta: status %d", resp.StatusCode)
     }
 
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("read champion meta: %w", err)
+    }
+
+    var result struct {
+        Data []opggChampionMeta `json:"data"`
+    }
+    if err := json.Unmarshal(body, &result); err != nil {
+        return nil, fmt.Errorf("decode champion meta: %w", err)
+    }
+
+    metaMap := make(map[int]opggChampionMeta, len(result.Data))
+    for _, champ := range result.Data {
+        metaMap[champ.ID] = champ
+    }
+    return metaMap, nil
+}
+
+// mapMode 将内部模式名称映射为 OP.GG API 有效模式
+// OP.GG 的 "aram-mayhem" mode 在 API 中无效，必须用 "aram"
+func mapMode(mode string) string {
+    switch mode {
+    case "hexgates":
+        return "aram"
+    case "aram-mayhem":
+        return "aram"
+    default:
+        return mode
+    }
+}
+
+// ScrapeChampionStats 爬取英雄胜率排行（通过内部 API）
+func (s *OPGGSource) ScrapeChampionStats(mode, patch string) ([]ChampionStat, error) {
+    // 1. 获取中文名映射
+    metaMap, err := s.fetchChampionMeta()
+    if err != nil {
+        return nil, fmt.Errorf("fetch meta: %w", err)
+    }
+
+    // 2. 获取统计数据
+    apiMode := mapMode(mode)
+    url := fmt.Sprintf("%s/NA/champions/%s?tier=all&hl=zh_CN", opggChampionAPI, apiMode)
+    // NOTE: 不要传 version 参数，会导致 422
+
+    req, err := newRequest("GET", url)
+    if err != nil {
+        return nil, err
+    }
+    req.Header.Set("Accept", "application/json")
+    req.Header.Set("Referer", "https://op.gg/")
+
+    randomDelay()
+    resp, err := s.client.Do(req)
+    if err != nil {
+        return nil, fmt.Errorf("fetch champion stats: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return nil, fmt.Errorf("fetch champion stats: status %d", resp.StatusCode)
+    }
+
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("read champion stats: %w", err)
+    }
+
+    var apiResp struct {
+        Data []opggChampionStats `json:"data"`
+    }
+    if err := json.Unmarshal(body, &apiResp); err != nil {
+        return nil, fmt.Errorf("decode champion stats: %w", err)
+    }
+
+    if len(apiResp.Data) == 0 {
+        return nil, fmt.Errorf("no champion stats returned from API")
+    }
+
+    // 3. 合并元数据和统计数据
     var stats []ChampionStat
-
-    // OP.GG 英雄列表表格
-    // 选择器需要根据实际页面结构调整
-    doc.Find("table.aram-champions-table tbody tr").Each(func(i int, s *goquery.Selection) {
-        // 提取英雄名称
-        nameCN := s.Find("td.champion-cell .name").Text()
-        nameEN := s.Find("td.champion-cell .english-name").Text()
-
-        // 提取胜率
-        winrateStr := s.Find("td.winrate-cell").Text()
-        winrateStr = strings.TrimSuffix(winrateStr, "%")
-        winrate, _ := strconv.ParseFloat(winrateStr, 64)
-
-        // 提取登场率
-        pickrateStr := s.Find("td.pickrate-cell").Text()
-        pickrateStr = strings.TrimSuffix(pickrateStr, "%")
-        pickrate, _ := strconv.ParseFloat(pickrateStr, 64)
-
-        // 提取段位
-        tier := s.Find("td.tier-cell img").AttrOr("alt", "")
+    for _, cs := range apiResp.Data {
+        meta, ok := metaMap[cs.ID]
+        if !ok {
+            continue
+        }
 
         stats = append(stats, ChampionStat{
-            NameCN:   strings.TrimSpace(nameCN),
-            NameEN:   strings.TrimSpace(nameEN),
-            Winrate:  winrate / 100,
-            Pickrate: pickrate / 100,
-            Tier:     tier,
-            Source:   s.Name(),
-            Patch:    patch,
+            ChampionID: cs.ID,
+            NameCN:     meta.Name,
+            NameEN:     meta.Key,
+            Winrate:    cs.AverageStats.WinRate,
+            Pickrate:   cs.AverageStats.PickRate,
+            Banrate:    cs.AverageStats.BanRate,
+            Tier:       cs.Tier,
+            SampleSize: cs.AverageStats.Play,
+            Patch:      patch,
+            Source:     s.Name(),
         })
-    })
+    }
 
-    return stats
+    if len(stats) == 0 {
+        return nil, fmt.Errorf("no valid champion stats after merging with meta")
+    }
+
+    return stats, nil
 }
 
 // ScrapeAugmentStats 爬取海克斯数据
-// OP.GG 页面有 augment 筛选区：
-// - 按等级筛选：白银 / 黄金 / 棱彩
-// - 每个海克斯显示：图标、名称、描述、推荐英雄 Top 5
-func (s *OPGGSource) ScrapeAugmentStats(mode, patch string) []HeroAugmentStat {
-    url := fmt.Sprintf("%s?patch=%s", s.baseURL, patch)
+func (s *OPGGSource) ScrapeAugmentStats(mode, patch string) ([]HeroAugmentStat, error) {
+    // TODO: OP.GG 内部 API 暂未发现 augment 统计 endpoint
+    return nil, fmt.Errorf("augment scraping not yet implemented for OP.GG")
+}
 
-    resp, err := s.client.Get(url)
+// ScrapeBuilds 爬取英雄出装
+func (s *OPGGSource) ScrapeBuilds(mode, patch string) ([]BuildRecommendation, error) {
+    // TODO: 需要遍历每个英雄的 build 页面
+    return nil, fmt.Errorf("build scraping not yet implemented for OP.GG")
+}
+
+// === 辅助方法（HTML 爬取，用于 augment/build 等非 API 数据）===
+
+// ScrapeAugmentList 爬取海克斯列表（基础信息，无胜率）
+func (s *OPGGSource) ScrapeAugmentList() ([]struct {
+    NameCN string
+    NameEN string
+    Tier   string
+}, error) {
+    url := opggBaseURL + "/zh-cn/lol/modes/aram-mayhem"
+
+    req, err := newRequest("GET", url)
     if err != nil {
-        return nil
+        return nil, err
+    }
+
+    randomDelay()
+    resp, err := retryRequest(s.client, req, 3)
+    if err != nil {
+        return nil, fmt.Errorf("fetch augment list: %w", err)
     }
     defer resp.Body.Close()
 
     doc, err := goquery.NewDocumentFromReader(resp.Body)
     if err != nil {
-        return nil
+        return nil, fmt.Errorf("parse augment list: %w", err)
     }
 
-    var stats []HeroAugmentStat
+    var augments []struct {
+        NameCN string
+        NameEN string
+        Tier   string
+    }
 
-    // 爬取海克斯列表
-    // OP.GG 的 augment 区域通常是独立区块
-    doc.Find(".augment-list .augment-item").Each(func(i int, sel *goquery.Selection) {
-        augmentName := sel.Find("strong").Text()
-        augmentDesc := sel.Find("p").Text()
-
-        // 提取推荐英雄（Top 5）
-        var topChampions []string
-        sel.Find(".recommended-champions img").Each(func(j int, img *goquery.Selection) {
-            champName := img.AttrOr("alt", "")
-            topChampions = append(topChampions, champName)
-        })
-
-        // 注意：OP.GG 的 augment 页面可能没有按英雄+海克斯的精确胜率
-        // 但提供了"该海克斯最适合的英雄"推荐
-        // 这部分数据可以作为补充，精确胜率仍需 U.GG / Lolalytics
-
-        stats = append(stats, HeroAugmentStat{
-            AugmentName:    strings.TrimSpace(augmentName),
-            Description:    strings.TrimSpace(augmentDesc),
-            TopChampions:   topChampions,
-            Source:         s.Name(),
-            Patch:          patch,
-        })
+    doc.Find("[data-type='augment']").Each(func(i int, sel *goquery.Selection) {
+        name := strings.TrimSpace(sel.Text())
+        tier, _ := sel.Attr("data-tier")
+        if name != "" {
+            augments = append(augments, struct {
+                NameCN string
+                NameEN string
+                Tier   string
+            }{
+                NameCN: name,
+                Tier:   tier,
+            })
+        }
     })
 
-    return stats
+    return augments, nil
 }
 
-// ScrapeBuilds 爬取英雄出装
-// OP.GG 每个英雄有独立的 aram-mayhem build 页面
-// 如：https://op.gg/zh-cn/lol/modes/aram-mayhem/ahri/build
-func (s *OPGGSource) ScrapeBuilds(mode, patch string) []BuildRecommendation {
-    // 1. 先获取英雄列表
-    champions := s.getChampionList()
-
-    var builds []BuildRecommendation
-
-    for _, champ := range champions {
-        buildURL := fmt.Sprintf("%s/%s/build?patch=%s", s.baseURL, champ.Key, patch)
-
-        resp, err := s.client.Get(buildURL)
-        if err != nil {
-            continue
-        }
-
-        doc, err := goquery.NewDocumentFromReader(resp.Body)
-        resp.Body.Close()
-        if err != nil {
-            continue
-        }
-
-        // 爬取出装顺序
-        var items []BuildItem
-        doc.Find(".build-items .item-slot").Each(func(i int, sel *goquery.Selection) {
-            itemIDStr := sel.AttrOr("data-item-id", "0")
-            itemID, _ := strconv.Atoi(itemIDStr)
-            itemName := sel.Find(".item-name").Text()
-
-            items = append(items, BuildItem{
-                ItemID: itemID,
-                NameCN: strings.TrimSpace(itemName),
-                Slot:   i + 1,
-            })
-        })
-
-        // 爬取符文
-        var runes []string
-        doc.Find(".rune-path .rune").Each(func(i int, sel *goquery.Selection) {
-            runeName := sel.AttrOr("alt", "")
-            runes = append(runes, runeName)
-        })
-
-        builds = append(builds, BuildRecommendation{
-            ChampionID:   champ.ID,
-            ChampionName: champ.NameCN,
-            Items:        items,
-            Runes:        runes,
-            Source:       s.Name(),
-            Patch:        patch,
-        })
+// ScrapeChampionBuild 爬取单个英雄的出装
+func (s *OPGGSource) ScrapeChampionBuild(championKey, patch string) (*BuildRecommendation, error) {
+    url := fmt.Sprintf("%s/zh-cn/lol/modes/aram-mayhem/%s/build", opggBaseURL, championKey)
+    if patch != "" {
+        url += "?patch=" + patch
     }
 
-    return builds
+    req, err := newRequest("GET", url)
+    if err != nil {
+        return nil, err
+    }
+
+    randomDelay()
+    resp, err := retryRequest(s.client, req, 3)
+    if err != nil {
+        return nil, fmt.Errorf("fetch build for %s: %w", championKey, err)
+    }
+    defer resp.Body.Close()
+
+    doc, err := goquery.NewDocumentFromReader(resp.Body)
+    if err != nil {
+        return nil, fmt.Errorf("parse build for %s: %w", championKey, err)
+    }
+
+    build := &BuildRecommendation{
+        ChampionName: championKey,
+        Patch:        patch,
+        Source:       s.Name(),
+    }
+
+    doc.Find(".build-items .item").Each(func(i int, sel *goquery.Selection) {
+        itemIDStr, _ := sel.Attr("data-item-id")
+        itemID, _ := strconv.Atoi(itemIDStr)
+        itemName := strings.TrimSpace(sel.Find(".item-name").Text())
+
+        if itemID > 0 {
+            build.Items = append(build.Items, BuildItem{
+                ItemID: itemID,
+                NameCN: itemName,
+                Slot:   i + 1,
+            })
+        }
+    })
+
+    doc.Find(".rune-page .rune").Each(func(i int, sel *goquery.Selection) {
+        runeName, _ := sel.Attr("alt")
+        if runeName == "" {
+            runeName = strings.TrimSpace(sel.Text())
+        }
+        if runeName != "" {
+            build.Runes = append(build.Runes, runeName)
+        }
+    })
+
+    return build, nil
+}
+
+// FetchChampionKeys 获取英雄英文 key 列表
+func (s *OPGGSource) FetchChampionKeys() ([]string, error) {
+    // 通过 meta API 获取，比 HTML 解析更可靠
+    metaMap, err := s.fetchChampionMeta()
+    if err != nil {
+        return nil, err
+    }
+
+    keys := make([]string, 0, len(metaMap))
+    for _, meta := range metaMap {
+        keys = append(keys, meta.Key)
+    }
+    return keys, nil
 }
 
 // OP.GG 数据特点说明
 //
+// 架构演进：
+// - 原计划：HTML 爬取（goquery）
+// - 问题：Next.js streaming SSR，初始 HTML 表格为空
+// - 解决：改用内部 REST API（参考 OPGG.py 项目）
+//
+// API 端点：
+// - Base: https://lol-api-champion.op.gg/api
+// - Meta:  /meta/champions?hl=zh_CN          → 英雄元数据
+// - Stats: /{region}/champions/{mode}?tier=all → 胜率统计
+//
 // 优势：
-// - 中文界面，海克斯名称和描述都是中文，无需翻译
-// - 有独立的 aram-mayhem 页面，数据针对性强
-// - 有海克斯筛选（白银/黄金/棱彩）
-// - 每个海克斯有推荐英雄 Top 5
-// - 每个英雄有独立的出装/符文页面
+// - 中文名直接来自 API，无需翻译
+// - JSON 结构化数据，解析稳定
+// - 无需 headless browser，直接 HTTP 即可
+// - 172 英雄数据完整，与 DDragon 数量一致
 //
 // 局限：
-// - 页面有 Cloudflare 反爬，需要配置 User-Agent、延时、可能需绕过
-// - 部分数据是动态渲染（Next.js），可能需要爬取 API 接口而非 HTML
-// - augment 按英雄+海克斯的精确胜率数据可能不如 U.GG 详细
-// - 建议作为中文数据源和补充验证，精确胜率仍以 U.GG 为主
+// - 内部 API，OP.GG 可能随时变更
+// - augment/build 暂无对应 API endpoint，仍需 HTML 爬取
+// - version 参数会导致 422，不能传版本号
+// - "aram-mayhem" mode 无效，必须用 "aram"
+//
+// 请求要求：
+// - Accept: application/json
+// - Referer: https://op.gg/ (stats endpoint 需要)
+// - User-Agent: 浏览器 UA（通过 newRequest 自动设置）
 //
 // 反爬策略：
-// - User-Agent 轮换（模拟真实浏览器）
+// - User-Agent 轮换
 // - 请求间隔 1-3 秒随机延时
 // - 失败重试（指数退避）
-// - 考虑使用 headless browser（如 rod/playwright）作为备选
 ```
 
 ### 5.4 数据源优先级策略
 
 | 数据类型 | 主数据源 | 备用/验证 | 说明 |
 |----------|----------|-----------|------|
-| 英雄胜率 | **U.GG** | OP.GG, Lolalytics | U.GG 数据最全面 |
+| 英雄胜率 | **OP.GG** | U.GG, Lolalytics | OP.GG 内部 API 稳定，直接返回结构化 JSON |
 | 海克斯名称（中文）| **OP.GG** | 本地翻译表 | OP.GG 原生中文 |
 | 英雄+海克斯胜率 | **U.GG** | Lolalytics | U.GG 有精确组合数据 |
-| 出装推荐 | **OP.GG** | U.GG | OP.GG 中文装备名 |
-| 符文推荐 | **OP.GG** | U.GG | OP.GG 中文符文名 |
+| 出装推荐 | **OP.GG** | U.GG | OP.GG 中文装备名（HTML 爬取）|
+| 符文推荐 | **OP.GG** | U.GG | OP.GG 中文符文名（HTML 爬取）|
 
 ---
 
