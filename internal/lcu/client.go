@@ -81,7 +81,7 @@ func (c *Client) GetChampSelectSession() (*lcu.ChampSelectSession, error) {
 }
 
 // GetGamePhase 获取当前游戏阶段
-func (c *Client) GetGamePhase() (lcu.GamePhase, error) {
+func (c *Client) GetGamePhase() (string, error) {
 	resp, err := c.lcuClient.Get("/lol-gameflow/v1/gameflow-phase")
 	if err != nil {
 		return "", fmt.Errorf("get game phase: %w", err)
@@ -93,7 +93,7 @@ func (c *Client) GetGamePhase() (lcu.GamePhase, error) {
 		return "", fmt.Errorf("decode game phase: %w", err)
 	}
 
-	return lcu.GamePhase(phase), nil
+	return phase, nil
 }
 
 // Subscribe 订阅自定义事件

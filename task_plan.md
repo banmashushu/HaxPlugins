@@ -30,13 +30,22 @@ Phase 1
 - **Status:** complete (MVP)
 
 ### Phase 3: 客户端选人阶段（2 周）
-- [ ] LCU 游戏阶段监听（Lobby → ChampSelect → InProgress）
-- [ ] 获取队友英雄列表（/lol-champ-select/v1/session）
-- [ ] 英雄胜率查询 API（Go → SQLite → React）
-- [ ] 前端选人界面：队友英雄胜率排行卡片
-- [ ] 海克斯推荐 API（按英雄 ID 查询最优海克斯）
-- [ ] 出装推荐 API
-- [ ] 前端海克斯列表 + 出装树组件
+- [x] LCU 游戏阶段监听（Lobby → ChampSelect → InProgress）
+- [x] 获取队友英雄列表（/lol-champ-select/v1/session）
+- [x] 英雄胜率查询 API（Go → SQLite → React）
+- [x] 前端选人界面：队友英雄胜率排行卡片
+- [x] 海克斯推荐 API（按英雄 ID 查询最优海克斯）
+- [x] 出装推荐 API
+- [x] 前端海克斯列表 + 出装树组件
+- **Status:** complete (MVP)
+
+### Phase 3 待完善项（非阻塞）
+- [ ] 运行时测试（需 LOL 客户端运行验证）
+- [ ] 英雄头像显示（需集成 DDragon 图片资源）
+- [ ] 装备图标显示（需集成 DDragon 图片资源）
+- [ ] 胜率数据缺失时的降级展示
+- [ ] 手动搜索模式（非选人阶段也能查询英雄数据）
+- [ ] UI 动效和过渡动画
 - **Status:** pending
 
 ### Phase 4: 游戏内 Overlay（2 周）

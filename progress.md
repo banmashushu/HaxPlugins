@@ -89,4 +89,40 @@
 | Where am I going? | Phase 3: 客户端选人阶段（LCU 连接 + UI） |
 | What's the goal? | 开发 LOL 海克斯大乱斗辅助插件 |
 | What have I learned? | OP.GG 有动态渲染，需 headless browser 或 API；lcu-gopher 有跨平台编译问题 |
-| What have I done? | 数据库层完成，基础数据已入库，LCU 客户端封装完成，demo 工具就绪 |
+### Phase 3: 客户端选人阶段 MVP
+- **Status:** complete (MVP)
+- **Started:** 2026-04-21
+- Actions taken:
+  - 重写 `app.go`：扩展 App 结构体，集成 DB + LCU，添加 4 个绑定 API
+  - 实现 LCU 事件推送：游戏阶段变化、选人会话更新通过 `runtime.EventsEmit` 推送到前端
+  - 创建 `frontend/src/components/ChampSelectView.tsx`：选人阶段主容器
+  - 创建 `frontend/src/components/TeamMemberCard.tsx`：队友卡片（胜率、展开详情）
+  - 创建 `frontend/src/components/AugmentList.tsx`：海克斯推荐列表（强度评分、选取率）
+  - 创建 `frontend/src/components/BuildPanel.tsx`：出装推荐面板（装备+技能加点）
+  - 重写 `frontend/src/App.tsx`：游戏阶段指示器 + 条件渲染
+  - 更新 `frontend/src/App.css`：深色主题（LOL 风格），卡片式布局
+  - 更新 Wails 绑定文件 `wailsjs/go/main/App.js` / `App.d.ts`
+- Files created/modified:
+  - app.go (rewritten)
+  - main.go (OnShutdown 回调)
+  - frontend/src/App.tsx (rewritten)
+  - frontend/src/App.css (rewritten)
+  - frontend/src/components/ChampSelectView.tsx (created)
+  - frontend/src/components/TeamMemberCard.tsx (created)
+  - frontend/src/components/AugmentList.tsx (created)
+  - frontend/src/components/BuildPanel.tsx (created)
+  - frontend/wailsjs/go/main/App.js (updated)
+  - frontend/wailsjs/go/main/App.d.ts (updated)
+- Test Results:
+  - 前端构建：`npm run build` ✓ (tsc + vite build 通过)
+  - Go 编译：`go build .` ✓ (包含前端 embed)
+  - lcudemo 编译：`go build ./cmd/lcudemo/...` ✓
+
+## 5-Question Reboot Check
+| Question | Answer |
+|----------|--------|
+| Where am I? | Phase 3 MVP 完成，前后端编译通过 |
+| Where am I going? | Phase 3 运行时测试（需 LOL 客户端），或 Phase 4 游戏内 Overlay |
+| What's the goal? | 开发 LOL 海克斯大乱斗辅助插件 |
+| What have I learned? | Wails EventsEmit/EventsOn 可实现 Go→React 实时推送；前端组件拆分保持代码整洁 |
+| What have I done? | 数据库层完成，LCU 封装完成，选人阶段 UI 完成，前后端编译通过 |
