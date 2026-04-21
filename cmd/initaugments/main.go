@@ -73,11 +73,12 @@ func main() {
 
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	fmt.Println("开始批量获取海克斯数据...")
+	// ===== 第一轮: 获取中文数据 + 英雄组合统计 =====
+	fmt.Println("[1/2] 获取海克斯中文数据...")
 	for i, champ := range champions {
 		fmt.Printf("  [%3d/%d] %s (id=%d)... ", i+1, len(champions), champ.NameCN, champ.ChampionID)
 
-		augments, err := fetchAugmentsForChampion(client, champ.ChampionID)
+		augments, err := fetchAugmentsForChampion(client, champ.ChampionID, "zh_CN")
 		if err != nil {
 			fmt.Printf("失败: %v\n", err)
 			continue
@@ -108,14 +109,52 @@ func main() {
 			})
 		}
 
-		// 限速: 每次请求间隔 500ms
+		// 限速
 		if i < len(champions)-1 {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}
 
-	fmt.Println()
-	fmt.Printf("共收集 %d 个独立海克斯，%d 条英雄+海克斯组合\n", len(augmentMap), len(heroStats))
+	fmt.Printf("\n共收集 %d 个独立海克斯，%d 条英雄+海克斯组合\n", len(augmentMap), len(heroStats))
+
+	// ===== 第二轮: 获取英文名 =====
+	fmt.Println("\n[2/2] 获取海克斯英文名...")
+	missingEN := countMissingEN(augmentMap)
+	fmt.Printf("  需补充英文名: %d 个\n", missingEN)
+
+	if missingEN > 0 {
+		for i, champ := range champions {
+			// 提前结束: 所有 augment 都已有英文名
+			if countMissingEN(augmentMap) == 0 {
+				fmt.Printf("  所有英文名已补齐，提前结束\n")
+				break
+			}
+
+			fmt.Printf("  [%3d/%d] %s (id=%d)... ", i+1, len(champions), champ.NameCN, champ.ChampionID)
+
+			augments, err := fetchAugmentsForChampion(client, champ.ChampionID, "en_US")
+			if err != nil {
+				fmt.Printf("失败: %v\n", err)
+				continue
+			}
+
+			updated := 0
+			for _, a := range augments {
+				if aug, exists := augmentMap[a.ID]; exists && aug.NameEN == "" && a.Name != "" {
+					aug.NameEN = a.Name
+					updated++
+				}
+			}
+			fmt.Printf("更新 %d 个英文名\n", updated)
+
+			// 限速
+			if i < len(champions)-1 {
+				time.Sleep(500 * time.Millisecond)
+			}
+		}
+	}
+
+	fmt.Printf("\n最终: %d 个海克斯有英文名\n", countHasEN(augmentMap))
 	fmt.Println()
 
 	// 保存海克斯基础数据
@@ -145,8 +184,28 @@ func main() {
 	fmt.Printf("海克斯总数: %d\n", len(allAugments))
 }
 
+func countMissingEN(m map[int]*data.Augment) int {
+	count := 0
+	for _, a := range m {
+		if a.NameEN == "" {
+			count++
+		}
+	}
+	return count
+}
+
+func countHasEN(m map[int]*data.Augment) int {
+	count := 0
+	for _, a := range m {
+		if a.NameEN != "" {
+			count++
+		}
+	}
+	return count
+}
+
 // fetchAugmentsForChampion 调用 MCP API 获取指定英雄的海克斯数据
-func fetchAugmentsForChampion(client *http.Client, championID int) ([]MCPAugment, error) {
+func fetchAugmentsForChampion(client *http.Client, championID int, lang string) ([]MCPAugment, error) {
 	reqBody := map[string]interface{}{
 		"jsonrpc": "2.0",
 		"id":      1,
@@ -155,7 +214,7 @@ func fetchAugmentsForChampion(client *http.Client, championID int) ([]MCPAugment
 			"name": "lol_list_aram_augments",
 			"arguments": map[string]interface{}{
 				"champion_id": championID,
-				"lang":        "zh_CN",
+				"lang":        lang,
 				"desired_output_fields": []string{
 					"data.augments[].{id,name,desc,tier,performance,popular}",
 				},
