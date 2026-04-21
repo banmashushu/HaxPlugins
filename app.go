@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"time"
 
 	"haxPlugins/internal/data"
 	"haxPlugins/internal/lcu"
@@ -22,6 +23,7 @@ type App struct {
 	ctx       context.Context
 	db        *data.DB
 	lcuClient *lcu.Client
+	mockMode  bool
 }
 
 // NewApp creates a new App application struct
@@ -50,19 +52,20 @@ func (a *App) startup(ctx context.Context) {
 	// 初始化 LCU 客户端
 	lcuClient, err := lcu.NewClient()
 	if err != nil {
-		runtime.LogErrorf(ctx, "创建 LCU 客户端失败: %v", err)
-		return
+		runtime.LogWarningf(ctx, "创建 LCU 客户端失败，启用 Mock 模式: %v", err)
+		a.startMockMode()
+	} else {
+		a.lcuClient = lcuClient
+		// 连接 LOL 客户端（非阻塞，因为 LOL 可能还未启动）
+		go a.connectLCU()
 	}
-	a.lcuClient = lcuClient
-
-	// 连接 LOL 客户端（非阻塞，因为 LOL 可能还未启动）
-	go a.connectLCU()
 }
 
 // connectLCU 连接 LOL 客户端并启动事件监听
 func (a *App) connectLCU() {
 	if err := a.lcuClient.Connect(); err != nil {
-		runtime.LogErrorf(a.ctx, "连接 LOL 客户端失败: %v", err)
+		runtime.LogWarningf(a.ctx, "连接 LOL 客户端失败，自动切换到 Mock 模式: %v", err)
+		a.startMockMode()
 		return
 	}
 
@@ -84,6 +87,32 @@ func (a *App) connectLCU() {
 	}
 }
 
+// mockTeamChampions 预设 Mock 队友英雄 ID
+var mockTeamChampions = []int{86, 22, 17, 222, 157} // 盖伦, 艾希, 提莫, 金克丝, 亚索
+
+// startMockMode 启动 Mock 模式（无 LOL 客户端时用于 UI 测试）
+func (a *App) startMockMode() {
+	a.mockMode = true
+	runtime.LogInfo(a.ctx, "Mock 模式已启动")
+
+	// 推送模拟游戏阶段
+	runtime.EventsEmit(a.ctx, "game:phase", "ChampSelect")
+
+	// 每 10 秒推送一次选人会话更新，模拟数据刷新
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-ticker.C:
+				runtime.EventsEmit(a.ctx, "game:champselect", map[string]interface{}{"mock": true})
+			}
+		}
+	}()
+}
+
 // shutdown is called when the app shuts down
 func (a *App) shutdown(ctx context.Context) {
 	if a.lcuClient != nil {
@@ -97,6 +126,9 @@ func (a *App) shutdown(ctx context.Context) {
 
 // GetCurrentPhase 获取当前游戏阶段
 func (a *App) GetCurrentPhase() (string, error) {
+	if a.mockMode {
+		return "ChampSelect", nil
+	}
 	if a.lcuClient == nil {
 		return "", fmt.Errorf("LCU 客户端未初始化")
 	}
@@ -121,30 +153,38 @@ type TeamMemberStats struct {
 
 // GetMyTeamStats 获取队友列表及统计数据
 func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
-	if a.lcuClient == nil {
-		return nil, fmt.Errorf("LCU 客户端未初始化")
-	}
 	if a.db == nil {
 		return nil, fmt.Errorf("数据库未初始化")
 	}
 
-	members, err := a.lcuClient.GetMyTeam()
-	if err != nil {
-		return nil, fmt.Errorf("获取队友列表失败: %w", err)
+	var championIDs []int
+	if a.mockMode {
+		championIDs = mockTeamChampions
+	} else {
+		if a.lcuClient == nil {
+			return nil, fmt.Errorf("LCU 客户端未初始化")
+		}
+		members, err := a.lcuClient.GetMyTeam()
+		if err != nil {
+			return nil, fmt.Errorf("获取队友列表失败: %w", err)
+		}
+		for _, m := range members {
+			championIDs = append(championIDs, m.ChampionID)
+		}
 	}
 
 	var result []TeamMemberStats
-	for _, m := range members {
+	for i, cid := range championIDs {
 		// 获取英雄名称
-		champion, err := a.db.GetChampionByID(m.ChampionID)
+		champion, err := a.db.GetChampionByID(cid)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取英雄信息失败: %v", err)
 		}
 
 		stats := TeamMemberStats{
-			ChampionID:   m.ChampionID,
+			ChampionID:   cid,
 			ChampionName: "",
-			CellID:       m.CellID,
+			CellID:       i,
 		}
 
 		if champion != nil {
@@ -152,7 +192,7 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 		}
 
 		// 获取英雄胜率数据
-		championStats, err := a.db.GetChampionStats([]int{m.ChampionID}, gameModeHexgates, currentPatch)
+		championStats, err := a.db.GetChampionStats([]int{cid}, gameModeHexgates, currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取英雄胜率失败: %v", err)
 		} else if len(championStats) > 0 {
@@ -162,7 +202,7 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 		}
 
 		// 获取海克斯推荐（前 5 个）
-		augments, err := a.db.GetAugmentsForChampion(m.ChampionID, gameModeHexgates, currentPatch)
+		augments, err := a.db.GetAugmentsForChampion(cid, gameModeHexgates, currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取海克斯推荐失败: %v", err)
 		} else if len(augments) > 5 {
@@ -172,7 +212,7 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 		}
 
 		// 获取出装推荐
-		build, err := a.db.GetBuildForChampion(m.ChampionID, gameModeHexgates, "", currentPatch)
+		build, err := a.db.GetBuildForChampion(cid, gameModeHexgates, "", currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取出装推荐失败: %v", err)
 		} else {
