@@ -65,11 +65,28 @@
 | 2026-04-20 19:45 | Accept-Encoding: br 导致 Brotli 解码失败 | 1 | 移除手动 Accept-Encoding 头 |
 | 2026-04-20 20:00 | file already closed (resp.Body) | 1 | 先 io.ReadAll 再 goquery 解析 |
 
+### Phase 1 补完: LCU 客户端集成
+- **Status:** complete
+- **Started:** 2026-04-21
+- Actions taken:
+  - 创建 `internal/lcu/client.go`：LCU 客户端封装（连接、事件监听、数据获取）
+  - 创建 `internal/lcu/events.go`：事件总线（EventBus）实现
+  - 集成 `lcu-gopher` 库（v0.0.3），修复 macOS 编译问题（`syscall.SysProcAttr.HideWindow`）
+  - 创建 `cmd/lcudemo/main.go`：LCU 连接测试工具
+- Files created/modified:
+  - internal/lcu/client.go (created)
+  - internal/lcu/events.go (created)
+  - cmd/lcudemo/main.go (created)
+  - internal/vendor/lcu-gopher/ (vendored + patched)
+  - go.mod (added replace directive)
+- Issues:
+  - `lcu-gopher` Windows-only `HideWindow` 字段导致 macOS 编译失败 → **已解决**：本地 vendor 并移除该字段
+
 ## 5-Question Reboot Check
 | Question | Answer |
 |----------|--------|
-| Where am I? | Phase 2: 数据层与爬虫 MVP |
+| Where am I? | Phase 2 完成，Phase 1 LCU 集成补完，准备进入 Phase 3 |
 | Where am I going? | Phase 3: 客户端选人阶段（LCU 连接 + UI） |
 | What's the goal? | 开发 LOL 海克斯大乱斗辅助插件 |
-| What have I learned? | OP.GG 有动态渲染，需 headless browser 或 API |
-| What have I done? | 数据库层完成，基础数据已入库，OP.GG 框架搭建 |
+| What have I learned? | OP.GG 有动态渲染，需 headless browser 或 API；lcu-gopher 有跨平台编译问题 |
+| What have I done? | 数据库层完成，基础数据已入库，LCU 客户端封装完成，demo 工具就绪 |

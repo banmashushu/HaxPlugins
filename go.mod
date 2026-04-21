@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.12.0
+	github.com/its-haze/lcu-gopher v0.0.3
 	github.com/mattn/go-sqlite3 v1.14.42
 	github.com/spf13/viper v1.21.0
 	github.com/wailsapp/wails/v2 v2.11.0
@@ -51,5 +52,7 @@ require (
 	golang.org/x/sys v0.42.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 )
+
+replace github.com/its-haze/lcu-gopher v0.0.3 => ./internal/vendor/lcu-gopher
 
 // replace github.com/wailsapp/wails/v2 v2.11.0 => /Users/zhangchuan/go_path/pkg/mod

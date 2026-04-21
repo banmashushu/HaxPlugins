@@ -9,14 +9,14 @@ Phase 1
 ## Phases
 
 ### Phase 1: 环境验证与基础骨架（1-2 周）
-- [ ] Wails v2 项目初始化（当前已安装 v2.11.0，v3 为 alpha 暂不采用）
-- [ ] SQLite 数据库初始化 + 迁移文件
-- [ ] lcu-gopher 集成验证（能否连接 LOL 客户端）
-- [ ] 前端 React + TypeScript 骨架搭建
-- [ ] 基础目录结构创建（internal/ 各包）
-- [ ] Zap 日志初始化
-- [ ] Viper 配置管理初始化
-- **Status:** pending
+- [x] Wails v2 项目初始化（当前已安装 v2.11.0，v3 为 alpha 暂不采用）
+- [x] SQLite 数据库初始化 + 迁移文件
+- [x] lcu-gopher 集成验证（能否连接 LOL 客户端）
+- [x] 前端 React + TypeScript 骨架搭建
+- [x] 基础目录结构创建（internal/ 各包）
+- [x] Zap 日志初始化
+- [x] Viper 配置管理初始化
+- **Status:** complete
 
 ### Phase 2: 数据层与爬虫 MVP（2-3 周）
 - [x] 设计并实现 SQLite Schema（7 张表）
