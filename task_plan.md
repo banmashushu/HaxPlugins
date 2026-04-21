@@ -19,14 +19,15 @@ Phase 1
 - **Status:** pending
 
 ### Phase 2: 数据层与爬虫 MVP（2-3 周）
-- [ ] 设计并实现 SQLite Schema（7 张表）
-- [ ] 英雄基础数据初始化（从 DDragon 获取）
-- [ ] 海克斯基础数据初始化
-- [ ] OP.GG 爬虫实现（英雄胜率、海克斯数据）
-- [ ] 手动触发一次数据爬取，填充测试数据
-- [ ] 数据版本管理（按补丁版本存储）
-- [ ] 验证数据源稳定性（OP.GG 页面结构是否可用）
-- **Status:** pending
+- [x] 设计并实现 SQLite Schema（7 张表）
+- [x] 英雄基础数据初始化（从 DDragon 获取）
+- [x] 装备基础数据初始化（从 DDragon 获取）
+- [x] OP.GG 英雄胜率爬虫（内部 REST API）
+- [x] **OP.GG MCP 海克斯数据导入**（195 海克斯 + 16043 组合）
+- [x] 手动触发数据爬取，填充测试数据（cmd/initdata + cmd/initaugments）
+- [x] 验证数据源稳定性（OP.GG API + MCP API 已验证可用）
+- [ ] 数据版本管理自动化（按补丁版本定时检测更新）
+- **Status:** complete (MVP)
 
 ### Phase 3: 客户端选人阶段（2 周）
 - [ ] LCU 游戏阶段监听（Lobby → ChampSelect → InProgress）

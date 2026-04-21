@@ -1,6 +1,6 @@
 # Progress Log
 
-## Session: 2026-04-20
+## Session: 2026-04-20 ~ 2026-04-21
 
 ### Phase 1: 计划制定
 - **Status:** complete
@@ -28,6 +28,10 @@
   - 创建 cmd/initdata：从 DDragon 导入英雄/装备基础数据
   - 创建 cmd/verify：验证数据源可用性
   - 成功导入 172 英雄 + 695 装备到 SQLite
+  - **修复装备中英文名称相同 bug**（ItemInfo 拆 NameEN/NameCN）
+  - **重写 OP.GG 英雄胜率爬取**：从 HTML 爬取改为内部 REST API
+  - **发现 OP.GG MCP API**：提供 ARAM 海克斯数据（`lol_list_aram_augments`）
+  - **创建 cmd/initaugments**：批量导入 195 海克斯 + 16043 条英雄组合数据
 - Files created/modified:
   - internal/data/champion.go (created)
   - internal/data/augment.go (created)
@@ -38,9 +42,11 @@
   - internal/scraper/source.go (created)
   - cmd/initdata/main.go (created)
   - cmd/verify/main.go (created)
+  - cmd/initaugments/main.go (created)
 - Issues:
-  - OP.GG 英雄胜率爬取：页面选择器需进一步调试
-  - 当前先用 DDragon 基础数据，胜率数据后续补充
+  - ~~OP.GG 英雄胜率爬取失败~~ → **已解决**：改用内部 API `lol-api-champion.op.gg`
+  - ~~海克斯数据来源不明~~ → **已解决**：使用 OP.GG MCP API
+  - MCP API performance 分数非胜率，需前端标注为"强度评分"
 
 ## Test Results
 | Test | Input | Expected | Actual | Status |
