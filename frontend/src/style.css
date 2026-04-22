@@ -1,26 +1,114 @@
-html {
-    background-color: rgba(27, 38, 54, 1);
-    text-align: center;
-    color: white;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-body {
+@layer base {
+  html {
+    background-color: #060e1a;
+  }
+
+  body {
     margin: 0;
-    color: white;
-    font-family: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto",
-    "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
-    sans-serif;
-}
+    font-family: "Nunito", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
 
-@font-face {
+  @font-face {
     font-family: "Nunito";
     font-style: normal;
     font-weight: 400;
-    src: local(""),
-    url("assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
+    src: local(""), url("assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
+  }
+
+  @font-face {
+    font-family: "Nunito";
+    font-style: normal;
+    font-weight: 600;
+    src: local(""), url("assets/fonts/nunito-v16-latin-600.woff2") format("woff2");
+  }
+
+  @font-face {
+    font-family: "Nunito";
+    font-style: normal;
+    font-weight: 700;
+    src: local(""), url("assets/fonts/nunito-v16-latin-700.woff2") format("woff2");
+  }
+
+  /* Custom scrollbar for game plugin aesthetic */
+  ::-webkit-scrollbar {
+    width: 4px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a1428;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #1e3450;
+    border-radius: 2px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2a4a6a;
+  }
 }
 
-#app {
-    height: 100vh;
-    text-align: center;
+@layer components {
+  /* Glassmorphism card base */
+  .glass-card {
+    background: linear-gradient(180deg, rgba(15, 29, 46, 0.92) 0%, rgba(10, 20, 40, 0.96) 100%);
+    border: 1px solid rgba(30, 52, 80, 0.6);
+    backdrop-filter: blur(8px);
+  }
+
+  .glass-card:hover {
+    background: linear-gradient(180deg, rgba(20, 38, 64, 0.95) 0%, rgba(14, 28, 52, 0.98) 100%);
+    border-color: rgba(30, 77, 138, 0.5);
+  }
+
+  /* Gold accent border shimmer */
+  .border-gold-accent {
+    border: 1px solid rgba(200, 170, 110, 0.25);
+  }
+  .border-gold-accent:hover {
+    border-color: rgba(200, 170, 110, 0.5);
+    box-shadow: 0 0 12px rgba(200, 170, 110, 0.15);
+  }
+
+  /* Tier badge glow effects */
+  .tier-s { text-shadow: 0 0 8px rgba(45, 212, 160, 0.5); }
+  .tier-a { text-shadow: 0 0 8px rgba(77, 166, 232, 0.5); }
+  .tier-b { text-shadow: 0 0 8px rgba(232, 196, 77, 0.5); }
+  .tier-c { text-shadow: 0 0 8px rgba(232, 138, 60, 0.4); }
+  .tier-d { text-shadow: 0 0 8px rgba(231, 76, 94, 0.5); }
+
+  /* Stat bar background */
+  .stat-bar-bg {
+    background: linear-gradient(90deg, rgba(30, 52, 80, 0.5) 0%, rgba(30, 52, 80, 0.3) 100%);
+  }
+
+  /* Popup panel */
+  .popup-panel {
+    background: linear-gradient(180deg, rgba(12, 24, 44, 0.97) 0%, rgba(8, 16, 32, 0.99) 100%);
+    border: 1px solid rgba(30, 77, 138, 0.4);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 1px rgba(3, 151, 171, 0.3);
+  }
+}
+
+@layer utilities {
+  .text-gold-shimmer {
+    background: linear-gradient(90deg, #c8aa6e 0%, #f0d878 50%, #c8aa6e 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    animation: shimmer 3s ease-in-out infinite;
+  }
+}
+
+@keyframes shimmer {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }

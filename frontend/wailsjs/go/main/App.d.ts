@@ -7,6 +7,10 @@ export function GetAugmentRecommendations(arg1:number):Promise<Array<data.HeroAu
 
 export function GetBuildRecommendation(arg1:number):Promise<data.Build>;
 
+export function GetChampionImages(arg1:Array<number>):Promise<Array<main.ChampionImage>>;
+
 export function GetCurrentPhase():Promise<string>;
+
+export function GetItemImageURL(arg1:number):Promise<string>;
 
 export function GetMyTeamStats():Promise<Array<main.TeamMemberStats>>;

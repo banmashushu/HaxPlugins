@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"embed"
 	"fmt"
+	"strings"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -63,6 +64,10 @@ func (d *DB) runMigrations() error {
 		}
 
 		if _, err := d.conn.Exec(string(content)); err != nil {
+			// 忽略重复列错误，允许迁移安全地重复执行
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return fmt.Errorf("execute migration %s: %w", file.Name(), err)
 		}
 	}

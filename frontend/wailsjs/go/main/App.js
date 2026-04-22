@@ -10,8 +10,16 @@ export function GetBuildRecommendation(arg1) {
   return window['go']['main']['App']['GetBuildRecommendation'](arg1);
 }
 
+export function GetChampionImages(arg1) {
+  return window['go']['main']['App']['GetChampionImages'](arg1);
+}
+
 export function GetCurrentPhase() {
   return window['go']['main']['App']['GetCurrentPhase']();
+}
+
+export function GetItemImageURL(arg1) {
+  return window['go']['main']['App']['GetItemImageURL'](arg1);
 }
 
 export function GetMyTeamStats() {

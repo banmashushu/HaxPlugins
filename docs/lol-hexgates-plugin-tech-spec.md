@@ -24,16 +24,18 @@
 
 | 层级 | 技术 | 版本/说明 |
 |------|------|----------|
-| **桌面框架** | Wails v3 | Go 后端 + React/Vue 前端，透明窗口、置顶、现代 UI |
-| **LCU 连接** | lcu-gopher | 自动检测 LOL 客户端，HTTP + WebSocket |
-| **数据爬取** | Go net/http + goquery | 爬取 OP.GG / U.GG / Lolalytics 海克斯数据 |
-| **本地缓存** | SQLite + mattn/go-sqlite3 | 英雄、海克斯、出装、胜率数据 |
-| **游戏内截图** | kbinani/screenshot | 跨平台截图，获取海克斯选项区域 |
-| **OCR 识别** | gosseract (Tesseract) | 识别海克斯文字，中文需训练数据 |
-| **全局热键** | robotn/gohook | F1 呼出/隐藏 Overlay |
-| **窗口管理** | Wails 窗口 API | 置顶、透明、无边框、定位到 LOL 窗口上方 |
+| **桌面框架** | Wails v2 | Go 后端 + React/TypeScript 前端 |
+| **LCU 连接** | lcu-gopher (vendored) | 自动检测 LOL 客户端，HTTP + WebSocket |
+| **数据爬取** | OP.GG MCP API + 内部 REST API | `mcp-api.op.gg/mcp` JSON-RPC 2.0 |
+| **本地缓存** | SQLite + mattn/go-sqlite3 | WAL 模式，自动迁移 |
+| **图标资源** | DDragon CDN | 英雄头像、装备图标 |
+| **游戏内截图** | kbinani/screenshot | 跨平台截图（规划中）|
+| **OCR 识别** | gosseract (Tesseract) | 识别海克斯文字（规划中）|
+| **全局热键** | robotn/gohook | F1 呼出/隐藏 Overlay（规划中）|
+| **窗口管理** | Wails 窗口 API | 置顶、透明、无边框（规划中）|
 | **配置管理** | Viper | 热键、数据源偏好、显示设置 |
 | **日志** | Zap | 结构化日志 |
+| **样式** | Tailwind CSS | 深色主题（LOL 风格）|
 
 ### 2.2 技术选型理由
 
@@ -479,13 +481,33 @@ CREATE TABLE build_recommendations (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     champion_id  INTEGER NOT NULL,
     game_mode    TEXT NOT NULL,
-    role         TEXT,             -- 可选，如 'AP', 'AD', 'Tank'
-    items        TEXT NOT NULL,     -- JSON [{"item_id": 3157, "slot": 1, "winrate": 0.55}, ...]
-    boots        TEXT,              -- JSON {"item_id": 3020, "winrate": 0.52}
+    role         TEXT,             -- 如 'adc', 'mid', 'top', 'support'
+    items        TEXT NOT NULL,     -- JSON [{"item_id": 3157, "slot": 1, "winrate": 55.2}, ...]
+    boots        TEXT,              -- JSON {"item_id": 3020, "winrate": 52.1}
     skill_order  TEXT,              -- JSON ["Q", "Q", "W", "Q", ...]
+    runes        TEXT,              -- JSON ["Press the Attack", "Triumph", ...]
     patch        TEXT NOT NULL,
     updated_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(champion_id, game_mode, role, patch)
+);
+
+-- 英雄协同推荐
+CREATE TABLE champion_synergies (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    champion_id           INTEGER NOT NULL,
+    champion_name         TEXT NOT NULL,
+    synergy_champion_id   INTEGER NOT NULL,
+    synergy_name          TEXT NOT NULL,
+    score_rank            INTEGER,        -- 排名
+    score                 REAL,           -- 协同评分
+    play                  INTEGER,        -- 场次
+    win                   INTEGER,        -- 胜场
+    win_rate              REAL,           -- 胜率 (%)
+    tier                  INTEGER,        -- 协同 tier
+    game_mode             TEXT NOT NULL,
+    patch                 TEXT NOT NULL,
+    updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(champion_id, synergy_champion_id, game_mode, patch)
 );
 
 -- 装备基础信息
@@ -553,9 +575,62 @@ func (s *Scraper) scrapeAll() {
 }
 ```
 
-### 5.3 OP.GG 爬虫实现
+### 5.3 数据获取实现
 
-OP.GG 前端使用 Next.js streaming SSR，初始 HTML 表格为空，无法通过 HTML 爬取获取数据。实际数据来自 OP.GG 内部 REST API `https://lol-api-champion.op.gg/api`。
+#### 5.3.1 OP.GG MCP API（主要数据源）
+
+OP.GG 提供 MCP (Model Context Protocol) API，通过 JSON-RPC 2.0 调用获取结构化 ARAM 数据。
+
+```go
+const mcpEndpoint = "https://mcp-api.op.gg/mcp"
+
+// MCPClient MCP API 客户端
+type MCPClient struct {
+    client *http.Client
+}
+
+// CallTool 调用 MCP 工具
+func (c *MCPClient) CallTool(toolName string, arguments map[string]any) (string, error) {
+    reqBody := map[string]any{
+        "jsonrpc": "2.0",
+        "id":      1,
+        "method":  "tools/call",
+        "params": map[string]any{
+            "name":      toolName,
+            "arguments": arguments,
+        },
+    }
+    // POST 到 mcpEndpoint，返回 text 内容（Python-like 类序列化）
+}
+```
+
+**可用的 MCP 工具：**
+
+| 工具名 | 功能 | 返回格式 |
+|--------|------|----------|
+| `lol_get_champion_analysis` | ARAM 出装、符文、技能加点 | Python-like 类序列化 |
+| `lol_get_champion_synergies` | 英雄协同推荐 | Python-like 类序列化 |
+| `lol_list_items` | 嚎哭深渊装备列表 | JSON |
+| `lol_list_aram_augments` | ARAM 海克斯列表 | JSON |
+
+**MCP 响应解析：**
+
+MCP 工具返回 Python-like 的类序列化文本（非 JSON），需要自定义解析器：
+
+```go
+// 示例响应：
+// class LolGetChampionAnalysis: champion,position,data
+// LolGetChampionAnalysis("ASHE", "adc", Data(...))
+
+// 解析步骤：
+// 1. stripClassDefinitions() — 去除 "class Xxx:" 定义行
+// 2. parseMCPClass() — 递归解析类名和字段
+// 3. 按索引访问字段（Data 在 index 2，synergies 的 Data 在 index 4）
+```
+
+#### 5.3.2 OP.GG 内部 REST API（英雄胜率）
+
+英雄胜率数据来自 OP.GG 内部 REST API `https://lol-api-champion.op.gg/api`：
 
 ```go
 package scraper
@@ -978,88 +1053,61 @@ lol-hexgates-helper/
 ├── go.mod
 ├── wails.json                       # Wails 配置
 │
-├── cmd/
-│   └── app/
-│       └── main.go                  # 应用启动逻辑
+├── cmd/                             # 数据初始化工具
+│   ├── initdata/main.go             # DDragon 英雄/装备基础数据
+│   ├── initaugments/main.go         # OP.GG MCP 海克斯数据
+│   ├── initbuilds/main.go           # OP.GG MCP 出装+符文+技能
+│   ├── initsynergies/main.go        # OP.GG MCP 协同数据
+│   ├── inititems/main.go            # OP.GG MCP 装备数据
+│   └── lcudemo/main.go              # LCU 连接测试
 │
 ├── internal/
-│   ├── app/                         # Wails 应用生命周期
-│   │   ├── app.go                   # 主 App 结构
-│   │   ├── events.go                # 事件定义
-│   │   └── windows.go               # 窗口管理
-│   │
 │   ├── lcu/                         # LCU 客户端封装
-│   │   ├── client.go                # lcu-gopher 封装
-│   │   ├── champ_select.go          # 选人阶段事件
-│   │   ├── events.go                # LCU 事件类型
-│   │   └── game_phase.go            # 游戏阶段监听
-│   │
-│   ├── overlay/                     # 游戏内 Overlay
-│   │   ├── window.go                # 透明窗口管理
-│   │   ├── hotkey.go                # 全局热键
-│   │   ├── screenshot.go            # 截图逻辑
-│   │   ├── ocr.go                   # OCR 识别
-│   │   └── position.go              # 窗口定位计算
+│   │   ├── client.go                # lcu-gopher 封装（vendored + patched）
+│   │   └── events.go                # 事件总线
 │   │
 │   ├── data/                        # 数据层
-│   │   ├── db.go                    # SQLite 连接
-│   │   ├── migrations/              # 数据库迁移
+│   │   ├── db.go                    # SQLite 连接 + 迁移
+│   │   ├── migrations/              # 数据库迁移文件
 │   │   ├── champion.go              # 英雄数据操作
 │   │   ├── augment.go               # 海克斯数据操作
-│   │   ├── build.go                 # 出装数据操作
+│   │   ├── build.go                 # 出装数据操作（含符文）
+│   │   ├── synergy.go               # 协同数据操作
+│   │   ├── item.go                  # 装备数据操作
 │   │   └── queries.go               # SQL 查询
 │   │
 │   ├── scraper/                     # 数据爬取
-│   │   ├── scraper.go               # 爬取引擎
-│   │   ├── source.go                # 数据源接口
-│   │   ├── opgg.go                  # OP.GG 爬取实现
-│   │   ├── ugg.go                   # U.GG 爬取实现
-│   │   ├── lolalytics.go            # Lolalytics 爬取实现
-│   │   └── http.go                  # HTTP 客户端配置
-│   │
-│   ├── service/                     # 业务逻辑层
-│   │   ├── champion.go              # 英雄服务
-│   │   ├── augment.go               # 海克斯服务
-│   │   ├── build.go                 # 出装服务
-│   │   └── overlay.go               # Overlay 服务
-│   │
-│   ├── config/                      # 配置
-│   │   ├── config.go                # 配置结构
-│   │   └── viper.go                 # Viper 初始化
+│   │   ├── ddragon.go               # DDragon API 客户端
+│   │   ├── opgg.go                  # OP.GG 内部 REST API
+│   │   ├── mcp.go                   # OP.GG MCP API 客户端 + 解析器
+│   │   ├── http.go                  # HTTP 客户端配置
+│   │   └── source.go                # 数据源接口
 │   │
 │   └── logger/                      # 日志
 │       └── zap.go                   # Zap 初始化
 │
-├── frontend/                        # Wails 前端 (React + TypeScript)
+├── frontend/                        # Wails 前端 (React + TypeScript + Tailwind)
 │   ├── src/
-│   │   ├── App.tsx                  # 主应用
+│   │   ├── App.tsx                  # 主应用（阶段路由）
 │   │   ├── main.tsx                 # 入口
+│   │   ├── style.css                # 全局样式（LOL 深色主题）
 │   │   ├── components/
-│   │   │   ├── ChampionCard.tsx     # 英雄卡片
-│   │   │   ├── AugmentList.tsx      # 海克斯列表
-│   │   │   ├── AugmentCard.tsx      # 海克斯卡片
-│   │   │   ├── BuildTree.tsx        # 出装树
-│   │   │   ├── WinrateBadge.tsx     # 胜率徽章
-│   │   │   └── Overlay.tsx          # 游戏内悬浮窗
-│   │   ├── hooks/
-│   │   │   ├── useChampion.ts       # 英雄数据 Hook
-│   │   │   ├── useAugment.ts        # 海克斯数据 Hook
-│   │   │   └── useOverlay.ts        # Overlay 状态 Hook
-│   │   ├── services/
-│   │   │   └── api.ts               # Go 后端 API 封装
-│   │   └── types/
-│   │       └── index.ts             # TypeScript 类型定义
+│   │   │   ├── ChampSelectView.tsx  # 选人阶段主容器
+│   │   │   ├── TeamMemberCard.tsx   # 队友卡片（胜率/海克斯/出装/协同）
+│   │   │   ├── AugmentList.tsx      # 海克斯推荐列表
+│   │   │   └── BuildPanel.tsx       # 出装面板（装备+符文+技能）
+│   │   └── utils/
+│   │       └── ddragon.ts           # DDragon CDN URL 工具
 │   ├── package.json
+│   ├── tailwind.config.js           # Tailwind 配置（LOL 配色）
 │   └── vite.config.ts
 │
-├── assets/                          # 静态资源
-│   ├── icons/                       # 应用图标
-│   └── images/                      # 占位图
+├── data/                            # SQLite 数据库（运行时生成）
+│   └── haxplugins.db
 │
 └── docs/                            # 文档
-    ├── ARCHITECTURE.md              # 架构文档
-    ├── DATA_SOURCES.md              # 数据源说明
-    └── API.md                       # 接口文档
+    ├── lol-hexgates-plugin-tech-spec.md  # 技术实现方案
+    └── superpowers/specs/                # 设计文档
 ```
 
 ---
@@ -1075,25 +1123,26 @@ lol-hexgates-helper/
 | lcu-gopher 集成 | 能连接 LOL 客户端，打印游戏阶段 |
 | 前端基础组件 | 英雄卡片、海克斯列表的 UI 骨架 |
 
-### Phase 2：客户端选人阶段（2-3 周）
+### Phase 2：数据层与爬虫 MVP（2-3 周）
 
 | 任务 | 输出 |
 |------|------|
-| 监听选人事件 | 能获取队友英雄列表 |
-| 英雄胜率查询 | 选人界面显示队友英雄胜率排行 |
-| 海克斯推荐 | 选中英雄后显示该英雄的海克斯胜率 |
-| 出装建议 | 显示推荐出装和技能加点 |
-| 数据爬虫 MVP | 手动触发一次爬取，填充测试数据 |
+| SQLite Schema 设计 | 英雄/海克斯/出装/协同/装备 表结构 |
+| DDragon 数据导入 | 172 英雄 + 695 装备基础数据 |
+| OP.GG MCP API 集成 | builds / augments / synergies / items 数据获取 |
+| 数据初始化工具 | `cmd/initdata`、`cmd/initaugments`、`cmd/initbuilds`、`cmd/initsynergies`、`cmd/inititems` |
 
-### Phase 3：数据服务完善（1-2 周）
+### Phase 3：客户端选人阶段（2 周）
 
 | 任务 | 输出 |
 |------|------|
-| OP.GG 爬虫 | 自动爬取英雄胜率、海克斯数据（中文数据源）|
-| U.GG 爬虫 | 交叉验证 |
-| Lolalytics 爬虫 | 交叉验证 |
-| 定时更新 | 每 6 小时自动检查更新 |
-| 数据版本管理 | 按补丁版本存储，支持历史查询 |
+| LCU 连接 + 事件监听 | 游戏阶段推送、选人会话更新 |
+| Mock 模式 | 无 LOL 客户端时自动启用，支持 UI 测试 |
+| 前端选人界面 | 队友卡片：胜率、Tier、头像 |
+| 海克斯推荐面板 | 强度评分、选取率、胜率 |
+| 出装推荐面板 | 核心装备、鞋子、符文、技能加点 |
+| 协同推荐面板 | 最佳搭档英雄、胜率、评分 |
+| 数据绑定 | Go ↔ React 实时推送 |
 
 ### Phase 4：游戏内 Overlay（2-3 周）
 
@@ -1302,9 +1351,20 @@ func (m *Manager) Toggle() {
 
 ---
 
-## 11. 下一步行动
+## 11. 数据初始化命令
 
-1. **确认方案**：是否有需要调整或补充的部分？
-2. **初始化项目**：创建 Wails + Go 项目骨架
-3. **MVP 实现**：先做客户端选人阶段的英雄胜率展示
-4. **数据验证**：验证 OP.GG / U.GG / Lolalytics 的数据是否可以稳定爬取
+```bash
+# 首次使用或补丁更新后运行：
+go run ./cmd/initdata        # DDragon 英雄/装备基础数据
+go run ./cmd/initaugments    # OP.GG MCP 海克斯数据
+go run ./cmd/initbuilds      # OP.GG MCP 出装+符文+技能数据
+go run ./cmd/initsynergies   # OP.GG MCP 协同数据
+go run ./cmd/inititems       # OP.GG MCP 嚎哭深渊装备数据
+```
+
+## 12. 下一步行动
+
+1. **Phase 4：游戏内 Overlay** — 透明窗口 + 热键 + 手动查询模式
+2. **数据自动更新** — 检测补丁版本变化，自动触发数据爬取
+3. **Windows 支持** — 修复 lcu-gopher 跨平台编译问题
+4. **OCR 自动识别** — 截图识别海克斯选项（进阶功能）

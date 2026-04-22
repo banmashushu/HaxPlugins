@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -116,6 +117,31 @@ func main() {
 	}
 
 	fmt.Printf("\n共收集 %d 个独立海克斯，%d 条英雄+海克斯组合\n", len(augmentMap), len(heroStats))
+
+	// ===== 归一化 performance 为 0-100 推荐度 =====
+	minPerf, maxPerf := math.MaxFloat64, -math.MaxFloat64
+	for _, s := range heroStats {
+		if s.Winrate < minPerf {
+			minPerf = s.Winrate
+		}
+		if s.Winrate > maxPerf {
+			maxPerf = s.Winrate
+		}
+	}
+	perfRange := maxPerf - minPerf
+	if perfRange > 0 {
+		for i := range heroStats {
+			normalized := (heroStats[i].Winrate - minPerf) / perfRange * 100
+			if normalized < 0 {
+				normalized = 0
+			}
+			if normalized > 100 {
+				normalized = 100
+			}
+			heroStats[i].Winrate = normalized
+		}
+	}
+	fmt.Printf("performance 归一化: %.2f ~ %.2f → 0~100\n", minPerf, maxPerf)
 
 	// ===== 第二轮: 获取英文名 =====
 	fmt.Println("\n[2/2] 获取海克斯英文名...")

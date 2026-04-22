@@ -61,6 +61,14 @@ func main() {
 		fmt.Println("  装备数据初始化完成")
 	}
 
+	// 初始化模拟胜率数据（MVP 测试用）
+	fmt.Println("[3] 初始化模拟胜率数据...")
+	if err := initMockStats(db, version); err != nil {
+		log.Printf("  模拟胜率数据初始化失败: %v", err)
+	} else {
+		fmt.Println("  模拟胜率数据初始化完成")
+	}
+
 	// 打印统计
 	fmt.Println()
 	fmt.Println("=== 初始化完成 ===")

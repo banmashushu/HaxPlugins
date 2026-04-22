@@ -16,6 +16,7 @@ import (
 const (
 	gameModeHexgates = "hexgates"
 	currentPatch     = "16.8.1"
+	ddragonBaseURL  = "https://ddragon.leagueoflegends.com/cdn"
 )
 
 // App struct
@@ -141,14 +142,16 @@ func (a *App) GetCurrentPhase() (string, error) {
 
 // TeamMemberStats 队友统计信息
 type TeamMemberStats struct {
-	ChampionID   int                     `json:"champion_id"`
-	ChampionName string                  `json:"champion_name"`
-	CellID       int                     `json:"cell_id"`
-	Winrate      float64                 `json:"winrate"`
-	Pickrate     float64                 `json:"pickrate"`
-	Tier         string                  `json:"tier"`
-	Augments     []data.HeroAugmentStat  `json:"augments"`
-	Build        *data.Build             `json:"build"`
+	ChampionID     int                    `json:"champion_id"`
+	ChampionName   string                 `json:"champion_name"`
+	ChampionNameEN string                 `json:"champion_name_en"`
+	CellID         int                    `json:"cell_id"`
+	Winrate        float64                `json:"winrate"`
+	Pickrate       float64                `json:"pickrate"`
+	Tier           string                 `json:"tier"`
+	Augments       []data.HeroAugmentStat `json:"augments"`
+	Build          *data.Build            `json:"build"`
+	Synergies      []data.ChampionSynergy `json:"synergies"`
 }
 
 // GetMyTeamStats 获取队友列表及统计数据
@@ -182,13 +185,15 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 		}
 
 		stats := TeamMemberStats{
-			ChampionID:   cid,
-			ChampionName: "",
-			CellID:       i,
+			ChampionID:     cid,
+			ChampionName:   "",
+			ChampionNameEN: "",
+			CellID:         i,
 		}
 
 		if champion != nil {
 			stats.ChampionName = champion.NameCN
+			stats.ChampionNameEN = champion.NameEN
 		}
 
 		// 获取英雄胜率数据
@@ -219,6 +224,14 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 			stats.Build = build
 		}
 
+		// 获取协同推荐
+		synergies, err := a.db.GetSynergiesForChampion(cid, gameModeHexgates, currentPatch)
+		if err != nil {
+			runtime.LogErrorf(a.ctx, "获取协同推荐失败: %v", err)
+		} else {
+			stats.Synergies = synergies
+		}
+
 		result = append(result, stats)
 	}
 
@@ -237,6 +250,43 @@ func (a *App) GetAugmentRecommendations(championID int) ([]data.HeroAugmentStat,
 	}
 
 	return augments, nil
+}
+
+// ChampionImage 英雄图标信息
+type ChampionImage struct {
+	ImageURL   string `json:"image_url"`
+	NameEN     string `json:"name_en"`
+	ChampionID int    `json:"champion_id"`
+}
+
+// GetChampionImages 批量获取指定英雄的图标 URL
+func (a *App) GetChampionImages(championIDs []int) ([]ChampionImage, error) {
+	if a.db == nil {
+		return nil, fmt.Errorf("数据库未初始化")
+	}
+
+	var images []ChampionImage
+	for _, cid := range championIDs {
+		champion, err := a.db.GetChampionByID(cid)
+		if err != nil || champion == nil {
+			images = append(images, ChampionImage{ChampionID: cid, ImageURL: "", NameEN: ""})
+			continue
+		}
+		key := champion.NameEN
+		imageURL := fmt.Sprintf("%s/%s/img/champion/%s.png", ddragonBaseURL, currentPatch, key)
+		images = append(images, ChampionImage{
+			ImageURL:   imageURL,
+			NameEN:     key,
+			ChampionID: cid,
+		})
+	}
+
+	return images, nil
+}
+
+// GetItemImageURL 获取装备图标 URL
+func (a *App) GetItemImageURL(itemID int) string {
+	return fmt.Sprintf("%s/%s/img/item/%d.png", ddragonBaseURL, currentPatch, itemID)
 }
 
 // GetBuildRecommendation 获取指定英雄的出装推荐

@@ -4,12 +4,12 @@
 开发一个 LOL 海克斯大乱斗（Hexgates ARAM）辅助插件，通过 LCU API + 截图 OCR + 透明 Overlay 为玩家提供英雄胜率、海克斯推荐、出装建议等数据支持。
 
 ## Current Phase
-Phase 1
+Phase 3 complete, preparing Phase 4
 
 ## Phases
 
 ### Phase 1: 环境验证与基础骨架（1-2 周）
-- [x] Wails v2 项目初始化（当前已安装 v2.11.0，v3 为 alpha 暂不采用）
+- [x] Wails v2 项目初始化（v2.11.0，v3 为 alpha 暂不采用）
 - [x] SQLite 数据库初始化 + 迁移文件
 - [x] lcu-gopher 集成验证（能否连接 LOL 客户端）
 - [x] 前端 React + TypeScript 骨架搭建
@@ -19,12 +19,15 @@ Phase 1
 - **Status:** complete
 
 ### Phase 2: 数据层与爬虫 MVP（2-3 周）
-- [x] 设计并实现 SQLite Schema（7 张表）
-- [x] 英雄基础数据初始化（从 DDragon 获取）
-- [x] 装备基础数据初始化（从 DDragon 获取）
+- [x] 设计并实现 SQLite Schema（7 张表 + 2 张扩展表）
+- [x] 英雄基础数据初始化（从 DDragon 获取，172 英雄）
+- [x] 装备基础数据初始化（从 DDragon 获取，695 件）
 - [x] OP.GG 英雄胜率爬虫（内部 REST API）
 - [x] **OP.GG MCP 海克斯数据导入**（195 海克斯 + 16043 组合）
-- [x] 手动触发数据爬取，填充测试数据（cmd/initdata + cmd/initaugments）
+- [x] **OP.GG MCP 出装数据导入**（172 英雄 builds，含符文+技能）
+- [x] **OP.GG MCP 协同数据导入**（165 英雄 synergies）
+- [x] **OP.GG MCP 装备数据导入**（247 件 ARAM 装备）
+- [x] 手动触发数据爬取，填充测试数据（cmd/initdata + cmd/initaugments + cmd/initbuilds + cmd/initsynergies + cmd/inititems）
 - [x] 验证数据源稳定性（OP.GG API + MCP API 已验证可用）
 - [ ] 数据版本管理自动化（按补丁版本定时检测更新）
 - **Status:** complete (MVP)
@@ -35,14 +38,16 @@ Phase 1
 - [x] 英雄胜率查询 API（Go → SQLite → React）
 - [x] 前端选人界面：队友英雄胜率排行卡片
 - [x] 海克斯推荐 API（按英雄 ID 查询最优海克斯）
-- [x] 出装推荐 API
-- [x] 前端海克斯列表 + 出装树组件
+- [x] 出装推荐 API（含符文、技能加点）
+- [x] 协同推荐 API（最佳搭档英雄）
+- [x] 前端海克斯列表 + 出装面板 + 符文显示 + 协同列表
+- [x] **Mock 模式**：无 LOL 客户端时自动启用，支持 UI 测试
 - **Status:** complete (MVP)
 
 ### Phase 3 待完善项（非阻塞）
 - [ ] 运行时测试（需 LOL 客户端运行验证）
-- [ ] 英雄头像显示（需集成 DDragon 图片资源）
-- [ ] 装备图标显示（需集成 DDragon 图片资源）
+- [ ] 英雄头像显示（DDragon CDN 图标已集成，需验证）
+- [ ] 装备图标显示（DDragon CDN 图标已集成，需验证）
 - [ ] 胜率数据缺失时的降级展示
 - [ ] 手动搜索模式（非选人阶段也能查询英雄数据）
 - [ ] UI 动效和过渡动画
@@ -66,6 +71,25 @@ Phase 1
 - [ ] 打包发布（Windows / macOS）
 - **Status:** pending
 
+## Data Initialization Commands
+
+```bash
+# 1. 英雄基础数据（DDragon）
+go run ./cmd/initdata
+
+# 2. 海克斯数据（OP.GG MCP）
+go run ./cmd/initaugments
+
+# 3. 出装数据（OP.GG MCP）
+go run ./cmd/initbuilds
+
+# 4. 协同数据（OP.GG MCP）
+go run ./cmd/initsynergies
+
+# 5. 装备数据（OP.GG MCP）
+go run ./cmd/inititems
+```
+
 ## Key Questions
 1. Wails v3 是 alpha 阶段，当前环境已安装 v2.11.0，是否用 v2？（决策：用 v2，稳定成熟，社区生态完善）
 2. OP.GG 页面结构是否稳定？是否有 Cloudflare 反爬？（决策：先实现 MVP 爬虫验证，若失败则考虑其他数据源或手动导入）
@@ -81,10 +105,12 @@ Phase 1
 | SQLite 本地缓存 | 第三方数据站无公开 API，海克斯数据变化频率低（每补丁一次） |
 | 多数据源冗余 | OP.GG 中文 + U.GG 精确胜率，互为备份 |
 | 不读内存、不注入 DLL | Vanguard 反作弊严格，截图+Overlay 是安全方案 |
+| OP.GG MCP API 作为主要数据源 | 提供结构化 ARAM 数据（builds/augments/synergies/items），中文原生 |
 
 ## Risks & Mitigation
 | Risk | Impact | Mitigation |
 |------|--------|------------|
+| OP.GG MCP API 变更/下线 | 数据获取失效 | 数据已本地缓存；保留 REST API 爬虫作为 fallback |
 | OP.GG 改版/反爬 | 爬虫失效 | 多数据源冗余；先验证 MVP 爬虫 |
 | OCR 中文识别率低 | 游戏内体验差 | MVP 先用手动查询；OCR 作为加分项 |
 | 不同分辨率 UI 位置不同 | Overlay 错位 | 支持常见分辨率配置；玩家手动校准 |
@@ -95,10 +121,16 @@ Phase 1
 ## Errors Encountered
 | Error | Attempt | Resolution |
 |-------|---------|------------|
-|       | 1       |            |
+| duplicate column name: runes | 1 | runMigrations() 忽略重复列错误 |
+| MCP unexpected root class | 1 | stripClassDefinitions() 去除类定义行 |
+| MCP no Data field found | 1 | 修正 ClassField index（analysis=2, synergies=4） |
+| MCP position invalid | 1 | selectRole() 映射 Tags 到有效位置 |
+| Synergy tier always 0 | 1 | 类型断言嵌套 class 再读字段 |
 
 ## Notes
 - Wails v2 API 与 v3 不同，需参考 v2 文档调整代码
-- 技术规格文档中的代码片段基于 v3，实现时需适配 v2
+- 技术规格文档中的代码片段基于 v3，实现时已适配 v2
 - 每个 Phase 完成后更新状态并记录 progress.md
 - 数据源验证是 Phase 2 的关键里程碑，若爬虫失败需及时调整方案
+- MCP API 返回 Python-like 类序列化文本，非 JSON，需自定义解析器
+- 当前补丁版本：16.8.1
