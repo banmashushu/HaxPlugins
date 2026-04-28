@@ -112,3 +112,27 @@
     background-position: 100% 50%;
   }
 }
+
+/* --- Overlay Panel Styles --- */
+
+/* Drag region for frameless window titlebar */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.drag-region button,
+.drag-region input,
+.drag-region [role="button"] {
+  -webkit-app-region: no-drag;
+}
+
+/* Slide-up animation for detail panel */
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

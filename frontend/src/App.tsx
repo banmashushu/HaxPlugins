@@ -2,7 +2,7 @@ import {useEffect, useState} from 'react';
 import './App.css';
 import {EventsOn} from "../wailsjs/runtime";
 import {GetCurrentPhase} from "../wailsjs/go/main/App";
-import ChampSelectView from "./components/ChampSelectView";
+import ChampSelectPanel from "./panels/ChampSelectPanel";
 
 type GamePhase = 'None' | 'Lobby' | 'Matchmaking' | 'CheckedIntoTournament' |
     'ReadyCheck' | 'ChampSelect' | 'GameStart' | 'InProgress' |
@@ -73,7 +73,7 @@ function App() {
         switch (phase) {
             case 'ChampSelect':
             case 'GameStart':
-                return <ChampSelectView />;
+                return <ChampSelectPanel />;
             case 'InProgress':
                 return (
                     <div className="flex flex-col items-center justify-center h-full gap-3">
@@ -103,9 +103,9 @@ function App() {
     return (
         <div className="flex flex-col h-screen bg-lol-bg-deep text-lol-text font-['Nunito',sans-serif] overflow-hidden select-none">
             {/* Header toolbar */}
-            <div className="flex items-center gap-2.5 px-3 py-2 bg-header-gradient border-b border-lol-border/60 flex-shrink-0">
+            <div className="flex items-center gap-2.5 px-3 py-2 bg-header-gradient border-b border-lol-border/60 flex-shrink-0 drag-region">
                 <div className={`w-2 h-2 rounded-full ${phaseDotClass(phase)} transition-all duration-300`} />
-                <span className="text-xs font-bold text-gold-shimmer tracking-widest uppercase">HaxPlugins</span>
+                <span className="text-xs font-bold text-gold-shimmer tracking-wider">海克斯大乱斗</span>
                 <span className="ml-auto text-[10px] text-lol-muted font-medium">{phaseDisplayName(phase)}</span>
             </div>
             <main className="flex-1 overflow-y-auto">
