@@ -17,13 +17,16 @@ func main() {
 
 	// Create application with options
 	err := wails.Run(&options.App{
-		Title:  "haxPlugins",
-		Width:  720,
-		Height: 360,
+		Title:         "haxPlugins",
+		Width:         340,
+		Height:        520,
+		DisableResize: true,
+		Frameless:     true,
+		AlwaysOnTop:   true,
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
-		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
+		BackgroundColour: &options.RGBA{R: 6, G: 14, B: 26, A: 255},
 		OnStartup:        app.startup,
 		OnShutdown:       app.shutdown,
 		Bind: []interface{}{

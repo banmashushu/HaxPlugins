@@ -28,11 +28,11 @@ export default {
           purple: '#b48ef0',
         },
         tier: {
-          s: '#2dd4a0',
-          a: '#4da6e8',
-          b: '#e8c44d',
-          c: '#e88a3c',
-          d: '#e74c5e',
+          s: '#c8aa6e',      // gold for S tier
+          a: '#b48ef0',      // purple for A tier
+          b: '#0397ab',      // blue for B tier
+          c: '#2dd4a0',      // green for C tier
+          d: '#5a6a7e',      // gray for D tier
           prismatic: '#b48ef0',
           gold: '#f0d878',
           silver: '#a8b4c2',
