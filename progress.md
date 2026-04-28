@@ -1,5 +1,46 @@
 # Progress Log
 
+## Session: 2026-04-28
+
+### 选人阶段嵌入式提示面板 (Overlay Panel Redesign)
+- **Status:** complete
+- **Actions taken:**
+  - 用户需求分析：参考 img.png/img_1.png，设计紧凑浮动面板替代原全尺寸页面
+  - Brainstorming → 设计文档 → 实施计划，全程 plan-driven
+  - 窗口配置：340×520 无边框置顶浮动窗口（main.go）
+  - 梯度色系更新：S=金(#c8aa6e), A=紫(#b48ef0), B=蓝(#0397ab), C=绿(#2dd4a0), D=灰(#5a6a7e)
+  - 新建 `frontend/src/shared/types.ts`：统一类型定义 + 梯度颜色映射 + formatPercent 工具
+  - 新建 `frontend/src/panels/HeroCard.tsx`：英雄卡片（头像+梯度角标+胜率+选中发光边框）
+  - 新建 `frontend/src/panels/HeroGrid.tsx`：3列英雄网格（空态占位）
+  - 新建 `frontend/src/panels/HeroDetail.tsx`：详情区（胜率/选取率 + 海克斯/出装/协同三标签切换）
+  - 新建 `frontend/src/panels/ChampSelectPanel.tsx`：主容器（LCU 事件监听 + GetMyTeamStats 数据拉取）
+  - 修改 `App.tsx`：选人阶段路由指向新面板，标题改为"海克斯大乱斗"，添加关闭按钮
+  - 修改 `style.css`：Wails `--wails-draggable` 拖拽区域 + slideUp 动画
+  - Bugfix: 导入路径修复（panels/ 下需 `../../wailsjs/` 而非 `../wailsjs/`）
+  - Bugfix: 拖拽不生效 → `--wails-draggable: drag` 替代 `-webkit-app-region`
+  - Bugfix: 无边框窗口无法关闭 → 标题栏添加 ✕ 按钮调用 `Quit()`
+- **Design docs:**
+  - `docs/superpowers/specs/2026-04-28-champselect-overlay-design.md`
+  - `docs/superpowers/plans/2026-04-28-champselect-overlay-plan.md`
+- **Files created/modified:**
+  - `main.go` (modified: window config)
+  - `frontend/tailwind.config.js` (modified: tier colors)
+  - `frontend/src/shared/types.ts` (created)
+  - `frontend/src/panels/HeroCard.tsx` (created)
+  - `frontend/src/panels/HeroGrid.tsx` (created)
+  - `frontend/src/panels/HeroDetail.tsx` (created)
+  - `frontend/src/panels/ChampSelectPanel.tsx` (created)
+  - `frontend/src/App.tsx` (modified: routing, title, close button, drag region)
+  - `frontend/src/style.css` (modified: drag region, slideUp animation)
+- **Not modified:** 所有 Go 后端代码 (app.go, internal/*)，所有旧前端组件（ChampSelectView, TeamMemberCard 等保留不动）
+- **Test Results:**
+  - `go build -o /dev/null ./...` ✓
+  - `npx tsc --noEmit` ✓ (zero errors)
+  - `npm run build` ✓ (vite production build)
+- **Next:** 场景2 — 游戏中海克斯选择识别（屏幕截图 + 图标模板匹配）
+
+---
+
 ## Session: 2026-04-22
 
 ### MCP API 集成 (Features 1, 3, 4)
