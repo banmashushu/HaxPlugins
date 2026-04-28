@@ -1,6 +1,6 @@
 import {useEffect, useState, useCallback} from 'react';
 import {EventsOn} from "../../wailsjs/runtime";
-import {GetMyTeamStats} from "../../wailsjs/go/main/App";
+import {GetMyTeamStats, GetEnemyTeamStats} from "../../wailsjs/go/main/App";
 import TeamMemberCard from "./TeamMemberCard";
 
 interface AugmentStat {
@@ -62,16 +62,70 @@ interface TeamMember {
     synergies: SynergyStat[];
 }
 
+function TeamColumn({title, members, accent, subtitle}: {
+    title: string;
+    members: TeamMember[];
+    accent: "blue" | "red";
+    subtitle?: string;
+}) {
+    const isBlue = accent === "blue";
+    const borderColor = isBlue ? "border-lol-blue/30" : "border-lol-red/30";
+    const bgColor = isBlue ? "bg-lol-blue/5" : "bg-lol-red/5";
+    const headerBg = isBlue ? "bg-lol-blue/10" : "bg-lol-red/10";
+    const headerBorder = isBlue ? "border-lol-blue/20" : "border-lol-red/20";
+    const textColor = isBlue ? "text-lol-blue-bright" : "text-lol-red";
+    const badgeBg = isBlue ? "bg-lol-blue-bright" : "bg-lol-red";
+    const badgeRing = isBlue ? "ring-lol-blue/40" : "ring-lol-red/40";
+
+    return (
+        <div className="flex-1 min-w-0">
+            {/* Column Header */}
+            <div className={`flex items-center justify-between px-3 py-2 rounded-t-lg border ${headerBorder} ${headerBg}`}>
+                <div className="flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${badgeBg} ring-1 ${badgeRing}`}/>
+                    <span className={`text-xs font-bold uppercase tracking-widest ${textColor}`}>{title}</span>
+                </div>
+                {subtitle && (
+                    <span className="text-[9px] text-lol-muted font-mono">{subtitle}</span>
+                )}
+            </div>
+
+            {/* Column Cards */}
+            <div className={`border-l border-r border-b ${borderColor} ${bgColor} rounded-b-lg p-2 space-y-1.5`}>
+                {members.map((member, idx) => (
+                    <TeamMemberCard key={member.cell_id} member={member} accent={accent} position={idx + 1}/>
+                ))}
+                {members.length === 0 && (
+                    <div className="py-8 text-center">
+                        <p className="text-[10px] text-lol-muted/50">等待选人中...</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function ChampSelectView() {
     const [team, setTeam] = useState<TeamMember[]>([]);
+    const [enemyTeam, setEnemyTeam] = useState<TeamMember[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    const loadTeam = useCallback(() => {
+    const loadData = useCallback(() => {
         setLoading(true);
         setError('');
-        GetMyTeamStats().then(stats => {
-            setTeam(stats as TeamMember[]);
+        Promise.all([
+            GetMyTeamStats().catch(err => {
+                setError(String(err));
+                return [];
+            }),
+            GetEnemyTeamStats().catch(err => {
+                setError(String(err));
+                return [];
+            }),
+        ]).then(([teamStats, enemyStats]) => {
+            setTeam(teamStats as TeamMember[]);
+            setEnemyTeam(enemyStats as TeamMember[]);
             setLoading(false);
         }).catch(err => {
             setError(String(err));
@@ -80,18 +134,18 @@ function ChampSelectView() {
     }, []);
 
     useEffect(() => {
-        loadTeam();
+        loadData();
 
         const unsubscribe = EventsOn("game:champselect", () => {
-            loadTeam();
+            loadData();
         });
 
         return () => {
             unsubscribe();
         };
-    }, [loadTeam]);
+    }, [loadData]);
 
-    if (loading && team.length === 0) {
+    if (loading && team.length === 0 && enemyTeam.length === 0) {
         return (
             <div className="flex items-center justify-center py-16 text-lol-muted text-sm">
                 <div className="flex items-center gap-2">
@@ -116,7 +170,7 @@ function ChampSelectView() {
                 <p className="text-lol-red text-sm mb-3">加载失败: {error}</p>
                 <button
                     className="px-4 py-1.5 rounded-md bg-lol-card border border-lol-border text-lol-text text-sm hover:border-lol-gold/40 hover:text-lol-gold transition-all duration-200"
-                    onClick={loadTeam}
+                    onClick={loadData}
                 >
                     重试
                 </button>
@@ -124,7 +178,7 @@ function ChampSelectView() {
         );
     }
 
-    if (team.length === 0) {
+    if (team.length === 0 && enemyTeam.length === 0) {
         return (
             <div className="text-center py-10">
                 <div className="w-10 h-10 rounded-full bg-lol-card border border-lol-border flex items-center justify-center mx-auto mb-3">
@@ -135,7 +189,7 @@ function ChampSelectView() {
                 <p className="text-lol-text text-sm mb-3">暂无队友数据</p>
                 <button
                     className="px-4 py-1.5 rounded-md bg-lol-card border border-lol-border text-lol-text text-sm hover:border-lol-gold/40 hover:text-lol-gold transition-all duration-200"
-                    onClick={loadTeam}
+                    onClick={loadData}
                 >
                     刷新
                 </button>
@@ -144,24 +198,39 @@ function ChampSelectView() {
     }
 
     return (
-        <div className="px-2.5 py-3">
+        <div className="px-3 py-3 max-w-3xl mx-auto">
+            {/* Header */}
             <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[11px] font-bold text-lol-gold/70 uppercase tracking-widest">我方队伍</h3>
+                <div className="flex items-center gap-1.5">
+                    <span className="text-[9px] text-lol-muted uppercase tracking-widest">海克斯大乱斗</span>
+                    <span className="text-[9px] text-lol-gold/50 font-bold">5v5</span>
+                </div>
                 <button
-                    className="px-2.5 py-1 rounded text-[10px] font-semibold text-lol-muted border border-lol-border/50
+                    className="px-3 py-1 rounded text-[11px] font-semibold text-lol-muted border border-lol-border/50
                                hover:border-lol-gold/30 hover:text-lol-gold transition-all duration-200"
-                    onClick={loadTeam}
+                    onClick={loadData}
                 >
                     刷新
                 </button>
             </div>
-            {/* 5-column grid for team members */}
-            <div className="grid grid-cols-5 gap-2">
-                {team.map(member => (
-                    <TeamMemberCard key={member.cell_id} member={member}/>
-                ))}
+
+            {/* VS Layout - Two Columns */}
+            <div className="flex gap-2">
+                <TeamColumn
+                    title="我方队伍"
+                    members={team}
+                    accent="blue"
+                    subtitle={`共${team.length}人`}
+                />
+                <TeamColumn
+                    title="敌方队伍"
+                    members={enemyTeam}
+                    accent="red"
+                    subtitle={`共${enemyTeam.length}人`}
+                />
             </div>
-            <p className="text-[9px] text-lol-muted/60 mt-2.5 text-center tracking-wide">悬停查看详细数据</p>
+
+            <p className="text-[9px] text-lol-muted/60 mt-3 text-center tracking-wide">点击卡片查看详细数据</p>
         </div>
     );
 }

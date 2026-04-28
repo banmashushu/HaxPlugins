@@ -43,11 +43,12 @@ func (c *DDragonClient) GetLatestVersion() (string, error) {
 
 // ChampionInfo DDragon 英雄数据
 type ChampionInfo struct {
-	ID    string `json:"id"`
-	Key   string `json:"key"`
-	Name  string `json:"name"`
-	Title string `json:"title"`
-	Tags  []string `json:"tags"`
+	ID      string   `json:"id"`
+	Key     string   `json:"key"`
+	Name    string   `json:"name"`
+	Title   string   `json:"title"`
+	Tags    []string `json:"tags"`
+	Partype string   `json:"partype"`
 }
 
 // ChampionData DDragon 响应结构
@@ -76,11 +77,12 @@ func (c *DDragonClient) FetchChampions(version string) (map[int]ChampionInfo, er
 
 		zhChamp := zhData.Data[key]
 		result[id] = ChampionInfo{
-			ID:    enChamp.ID,
-			Key:   enChamp.Key,
-			Name:  zhChamp.Name,
-			Title: zhChamp.Title,
-			Tags:  enChamp.Tags,
+			ID:      enChamp.ID,
+			Key:     enChamp.Key,
+			Name:    zhChamp.Name,
+			Title:   zhChamp.Title,
+			Tags:    enChamp.Tags,
+			Partype: enChamp.Partype,
 		}
 	}
 

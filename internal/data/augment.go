@@ -7,12 +7,13 @@ import (
 
 // Augment 海克斯
 type Augment struct {
-	AugmentID   string `json:"augment_id"`
-	NameEN      string `json:"name_en"`
-	NameCN      string `json:"name_cn"`
-	Description string `json:"description"`
-	Tier        string `json:"tier"`
-	IconURL     string `json:"icon_url"`
+	AugmentID    string `json:"augment_id"`
+	NameEN       string `json:"name_en"`
+	NameCN       string `json:"name_cn"`
+	Description  string `json:"description"`
+	Tier         string `json:"tier"`
+	IconURL      string `json:"icon_url"`
+	RequiresMana bool   `json:"requires_mana"`
 }
 
 // HeroAugmentStat 英雄+海克斯组合统计
@@ -37,14 +38,15 @@ func (d *DB) SaveAugments(augments []Augment) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO augments (augment_id, name_en, name_cn, description, tier, icon_url)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO augments (augment_id, name_en, name_cn, description, tier, icon_url, requires_mana)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(augment_id) DO UPDATE SET
 			name_en = excluded.name_en,
 			name_cn = excluded.name_cn,
 			description = excluded.description,
 			tier = excluded.tier,
-			icon_url = excluded.icon_url
+			icon_url = excluded.icon_url,
+			requires_mana = excluded.requires_mana
 	`)
 	if err != nil {
 		return err
@@ -52,7 +54,11 @@ func (d *DB) SaveAugments(augments []Augment) error {
 	defer stmt.Close()
 
 	for _, a := range augments {
-		if _, err := stmt.Exec(a.AugmentID, a.NameEN, a.NameCN, a.Description, a.Tier, a.IconURL); err != nil {
+		requiresMana := 0
+		if a.RequiresMana {
+			requiresMana = 1
+		}
+		if _, err := stmt.Exec(a.AugmentID, a.NameEN, a.NameCN, a.Description, a.Tier, a.IconURL, requiresMana); err != nil {
 			return fmt.Errorf("save augment %s: %w", a.AugmentID, err)
 		}
 	}
@@ -62,7 +68,7 @@ func (d *DB) SaveAugments(augments []Augment) error {
 
 // GetAllAugments 获取所有海克斯
 func (d *DB) GetAllAugments() ([]Augment, error) {
-	rows, err := d.conn.Query(`SELECT augment_id, name_en, name_cn, description, tier, icon_url FROM augments ORDER BY name_cn`)
+	rows, err := d.conn.Query(`SELECT augment_id, name_en, name_cn, description, tier, icon_url, requires_mana FROM augments ORDER BY name_cn`)
 	if err != nil {
 		return nil, err
 	}
@@ -71,9 +77,11 @@ func (d *DB) GetAllAugments() ([]Augment, error) {
 	var augments []Augment
 	for rows.Next() {
 		var a Augment
-		if err := rows.Scan(&a.AugmentID, &a.NameEN, &a.NameCN, &a.Description, &a.Tier, &a.IconURL); err != nil {
+		var requiresMana int
+		if err := rows.Scan(&a.AugmentID, &a.NameEN, &a.NameCN, &a.Description, &a.Tier, &a.IconURL, &requiresMana); err != nil {
 			return nil, err
 		}
+		a.RequiresMana = requiresMana == 1
 		augments = append(augments, a)
 	}
 
@@ -120,7 +128,10 @@ func (d *DB) GetAugmentsForChampion(championID int, gameMode, patch string) ([]H
 		JOIN champions c ON ha.champion_id = c.champion_id
 		JOIN augments a ON ha.augment_id = a.augment_id
 		WHERE ha.champion_id = ? AND ha.game_mode = ? AND ha.patch = ?
-		ORDER BY ha.winrate DESC`
+		  AND ha.pickrate >= 0.03
+		  AND a.name_cn != ''
+		  AND NOT (a.requires_mana = 1 AND c.partype != 'Mana')
+		ORDER BY ha.pickrate * ha.winrate DESC`
 
 	rows, err := d.conn.Query(query, championID, gameMode, patch)
 	if err != nil {
@@ -144,10 +155,14 @@ func (d *DB) GetAugmentsForChampion(championID int, gameMode, patch string) ([]H
 // GetAugmentByID 按ID获取海克斯
 func (d *DB) GetAugmentByID(id string) (*Augment, error) {
 	var a Augment
+	var requiresMana int
 	err := d.conn.QueryRow(`
-		SELECT augment_id, name_en, name_cn, description, tier, icon_url
+		SELECT augment_id, name_en, name_cn, description, tier, icon_url, requires_mana
 		FROM augments WHERE augment_id = ?
-	`, id).Scan(&a.AugmentID, &a.NameEN, &a.NameCN, &a.Description, &a.Tier, &a.IconURL)
+	`, id).Scan(&a.AugmentID, &a.NameEN, &a.NameCN, &a.Description, &a.Tier, &a.IconURL, &requiresMana)
+	if err == nil {
+		a.RequiresMana = requiresMana == 1
+	}
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

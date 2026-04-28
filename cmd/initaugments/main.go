@@ -87,14 +87,22 @@ func main() {
 		fmt.Printf("%d 个海克斯\n", len(augments))
 
 		for _, a := range augments {
+			requiresMana := strings.Contains(a.Desc, "scaleMana") || strings.Contains(a.Desc, "法力值")
+
 			// 收集基础数据（去重）
 			if _, exists := augmentMap[a.ID]; !exists {
 				augmentMap[a.ID] = &data.Augment{
-					AugmentID:   strconv.Itoa(a.ID),
-					NameCN:      a.Name,
-					Description: a.Desc,
-					Tier:        tierToString(a.Tier),
+					AugmentID:    strconv.Itoa(a.ID),
+					NameCN:       a.Name,
+					Description:  a.Desc,
+					Tier:         tierToString(a.Tier),
+					RequiresMana: requiresMana,
 				}
+			}
+
+			// 跳过属性不匹配的符文（如无蓝条英雄配法力值符文）
+			if requiresMana && champ.Partype != "Mana" {
+				continue
 			}
 
 			// 收集英雄+海克斯统计

@@ -11,6 +11,8 @@ export function GetChampionImages(arg1:Array<number>):Promise<Array<main.Champio
 
 export function GetCurrentPhase():Promise<string>;
 
+export function GetEnemyTeamStats():Promise<Array<main.TeamMemberStats>>;
+
 export function GetItemImageURL(arg1:number):Promise<string>;
 
 export function GetMyTeamStats():Promise<Array<main.TeamMemberStats>>;

@@ -128,3 +128,23 @@ func (c *Client) GetMyTeam() ([]TeamMember, error) {
 
 	return members, nil
 }
+
+// GetEnemyTeam 获取敌方队伍列表
+func (c *Client) GetEnemyTeam() ([]TeamMember, error) {
+	session, err := c.GetChampSelectSession()
+	if err != nil {
+		return nil, err
+	}
+
+	var members []TeamMember
+	for _, p := range session.TheirTeam {
+		members = append(members, TeamMember{
+			ChampionID: p.ChampionId,
+			CellID:     p.CellId,
+			SummonerID: p.SummonerId,
+			Position:   p.AssignedPosition,
+		})
+	}
+
+	return members, nil
+}

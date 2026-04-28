@@ -13,6 +13,7 @@ type Champion struct {
 	NameCN     string   `json:"name_cn"`
 	Title      string   `json:"title"`
 	Tags       []string `json:"tags"`
+	Partype    string   `json:"partype"`
 }
 
 // ChampionStat 英雄统计
@@ -36,13 +37,14 @@ func (d *DB) SaveChampions(champions []Champion) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`
-		INSERT INTO champions (champion_id, name_en, name_cn, title, tags)
-		VALUES (?, ?, ?, ?, ?)
+		INSERT INTO champions (champion_id, name_en, name_cn, title, tags, partype)
+		VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(champion_id) DO UPDATE SET
 			name_en = excluded.name_en,
 			name_cn = excluded.name_cn,
 			title = excluded.title,
-			tags = excluded.tags
+			tags = excluded.tags,
+			partype = excluded.partype
 	`)
 	if err != nil {
 		return err
@@ -51,7 +53,7 @@ func (d *DB) SaveChampions(champions []Champion) error {
 
 	for _, c := range champions {
 		tagsJSON, _ := json.Marshal(c.Tags)
-		if _, err := stmt.Exec(c.ChampionID, c.NameEN, c.NameCN, c.Title, string(tagsJSON)); err != nil {
+		if _, err := stmt.Exec(c.ChampionID, c.NameEN, c.NameCN, c.Title, string(tagsJSON), c.Partype); err != nil {
 			return fmt.Errorf("save champion %d: %w", c.ChampionID, err)
 		}
 	}
@@ -61,7 +63,7 @@ func (d *DB) SaveChampions(champions []Champion) error {
 
 // GetAllChampions 获取所有英雄
 func (d *DB) GetAllChampions() ([]Champion, error) {
-	rows, err := d.conn.Query(`SELECT champion_id, name_en, name_cn, title, tags FROM champions ORDER BY name_cn`)
+	rows, err := d.conn.Query(`SELECT champion_id, name_en, name_cn, title, tags, partype FROM champions ORDER BY name_cn`)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +73,7 @@ func (d *DB) GetAllChampions() ([]Champion, error) {
 	for rows.Next() {
 		var c Champion
 		var tagsJSON string
-		if err := rows.Scan(&c.ChampionID, &c.NameEN, &c.NameCN, &c.Title, &tagsJSON); err != nil {
+		if err := rows.Scan(&c.ChampionID, &c.NameEN, &c.NameCN, &c.Title, &tagsJSON, &c.Partype); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(tagsJSON), &c.Tags)
@@ -86,9 +88,9 @@ func (d *DB) GetChampionByID(id int) (*Champion, error) {
 	var c Champion
 	var tagsJSON string
 	err := d.conn.QueryRow(`
-		SELECT champion_id, name_en, name_cn, title, tags
+		SELECT champion_id, name_en, name_cn, title, tags, partype
 		FROM champions WHERE champion_id = ?
-	`, id).Scan(&c.ChampionID, &c.NameEN, &c.NameCN, &c.Title, &tagsJSON)
+	`, id).Scan(&c.ChampionID, &c.NameEN, &c.NameCN, &c.Title, &tagsJSON, &c.Partype)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

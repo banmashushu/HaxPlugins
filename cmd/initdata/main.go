@@ -90,6 +90,7 @@ func initChampions(db *data.DB, client *scraper.DDragonClient, version string) e
 			NameCN:     info.Name,
 			Title:      info.Title,
 			Tags:       info.Tags,
+			Partype:    info.Partype,
 		})
 	}
 

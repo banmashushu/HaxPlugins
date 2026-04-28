@@ -91,6 +91,9 @@ func (a *App) connectLCU() {
 // mockTeamChampions 预设 Mock 队友英雄 ID
 var mockTeamChampions = []int{86, 22, 17, 222, 157} // 盖伦, 艾希, 提莫, 金克丝, 亚索
 
+// mockEnemyChampions 预设 Mock 敌方英雄 ID
+var mockEnemyChampions = []int{238, 103, 84, 11, 1} // 劫, 阿狸, 赵信, 易, 安妮
+
 // startMockMode 启动 Mock 模式（无 LOL 客户端时用于 UI 测试）
 func (a *App) startMockMode() {
 	a.mockMode = true
@@ -156,14 +159,10 @@ type TeamMemberStats struct {
 
 // GetMyTeamStats 获取队友列表及统计数据
 func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
-	if a.db == nil {
-		return nil, fmt.Errorf("数据库未初始化")
-	}
-
-	var championIDs []int
-	if a.mockMode {
-		championIDs = mockTeamChampions
-	} else {
+	return a.getTeamStats(func() ([]int, error) {
+		if a.mockMode {
+			return mockTeamChampions, nil
+		}
 		if a.lcuClient == nil {
 			return nil, fmt.Errorf("LCU 客户端未初始化")
 		}
@@ -171,14 +170,47 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 		if err != nil {
 			return nil, fmt.Errorf("获取队友列表失败: %w", err)
 		}
+		var IDs []int
 		for _, m := range members {
-			championIDs = append(championIDs, m.ChampionID)
+			IDs = append(IDs, m.ChampionID)
 		}
+		return IDs, nil
+	})
+}
+
+// GetEnemyTeamStats 获取敌方队伍列表及统计数据
+func (a *App) GetEnemyTeamStats() ([]TeamMemberStats, error) {
+	return a.getTeamStats(func() ([]int, error) {
+		if a.mockMode {
+			return mockEnemyChampions, nil
+		}
+		if a.lcuClient == nil {
+			return nil, fmt.Errorf("LCU 客户端未初始化")
+		}
+		members, err := a.lcuClient.GetEnemyTeam()
+		if err != nil {
+			return nil, fmt.Errorf("获取敌方列表失败: %w", err)
+		}
+		var IDs []int
+		for _, m := range members {
+			IDs = append(IDs, m.ChampionID)
+		}
+		return IDs, nil
+	})
+}
+
+func (a *App) getTeamStats(getChampionIDs func() ([]int, error)) ([]TeamMemberStats, error) {
+	if a.db == nil {
+		return nil, fmt.Errorf("数据库未初始化")
+	}
+
+	championIDs, err := getChampionIDs()
+	if err != nil {
+		return nil, err
 	}
 
 	var result []TeamMemberStats
 	for i, cid := range championIDs {
-		// 获取英雄名称
 		champion, err := a.db.GetChampionByID(cid)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取英雄信息失败: %v", err)
@@ -196,7 +228,6 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 			stats.ChampionNameEN = champion.NameEN
 		}
 
-		// 获取英雄胜率数据
 		championStats, err := a.db.GetChampionStats([]int{cid}, gameModeHexgates, currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取英雄胜率失败: %v", err)
@@ -206,7 +237,6 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 			stats.Tier = championStats[0].Tier
 		}
 
-		// 获取海克斯推荐（前 5 个）
 		augments, err := a.db.GetAugmentsForChampion(cid, gameModeHexgates, currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取海克斯推荐失败: %v", err)
@@ -216,7 +246,6 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 			stats.Augments = augments
 		}
 
-		// 获取出装推荐
 		build, err := a.db.GetBuildForChampion(cid, gameModeHexgates, "", currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取出装推荐失败: %v", err)
@@ -224,7 +253,6 @@ func (a *App) GetMyTeamStats() ([]TeamMemberStats, error) {
 			stats.Build = build
 		}
 
-		// 获取协同推荐
 		synergies, err := a.db.GetSynergiesForChampion(cid, gameModeHexgates, currentPatch)
 		if err != nil {
 			runtime.LogErrorf(a.ctx, "获取协同推荐失败: %v", err)

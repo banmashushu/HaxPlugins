@@ -18,6 +18,10 @@ export function GetCurrentPhase() {
   return window['go']['main']['App']['GetCurrentPhase']();
 }
 
+export function GetEnemyTeamStats() {
+  return window['go']['main']['App']['GetEnemyTeamStats']();
+}
+
 export function GetItemImageURL(arg1) {
   return window['go']['main']['App']['GetItemImageURL'](arg1);
 }
