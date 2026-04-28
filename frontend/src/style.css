@@ -124,6 +124,9 @@
 .drag-region [role="button"] {
   -webkit-app-region: no-drag;
 }
+.no-drag {
+  -webkit-app-region: no-drag;
+}
 
 /* Slide-up animation for detail panel */
 @keyframes slideUp {

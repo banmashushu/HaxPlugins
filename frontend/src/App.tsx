@@ -1,6 +1,6 @@
 import {useEffect, useState} from 'react';
 import './App.css';
-import {EventsOn} from "../wailsjs/runtime";
+import {EventsOn, Quit} from "../wailsjs/runtime";
 import {GetCurrentPhase} from "../wailsjs/go/main/App";
 import ChampSelectPanel from "./panels/ChampSelectPanel";
 
@@ -103,10 +103,17 @@ function App() {
     return (
         <div className="flex flex-col h-screen bg-lol-bg-deep text-lol-text font-['Nunito',sans-serif] overflow-hidden select-none">
             {/* Header toolbar */}
-            <div className="flex items-center gap-2.5 px-3 py-2 bg-header-gradient border-b border-lol-border/60 flex-shrink-0 drag-region">
+            <div className="flex items-center gap-2.5 px-3 py-2.5 bg-header-gradient border-b border-lol-border/60 flex-shrink-0 drag-region">
                 <div className={`w-2 h-2 rounded-full ${phaseDotClass(phase)} transition-all duration-300`} />
                 <span className="text-xs font-bold text-gold-shimmer tracking-wider">海克斯大乱斗</span>
                 <span className="ml-auto text-[10px] text-lol-muted font-medium">{phaseDisplayName(phase)}</span>
+                <button
+                  onClick={() => Quit()}
+                  className="ml-2 w-5 h-5 flex items-center justify-center rounded text-lol-muted hover:text-lol-red hover:bg-lol-red/10 transition-colors text-xs font-bold leading-none no-drag"
+                  title="关闭"
+                >
+                  ✕
+                </button>
             </div>
             <main className="flex-1 overflow-y-auto">
                 {renderContent()}
